@@ -1,0 +1,13 @@
+name:           shapes2d
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       Two-dimensional polygonal shapes
+category:       data structures, graphics
+description:
+    Two-dimensional polygonal shapes and operations over them.
+build-type:     Simple
+build-depends:  base >= 4.0, containers
+exposed-modules:
+    Data.Shapes2D
+
