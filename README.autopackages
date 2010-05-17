@@ -1,6 +1,19 @@
 Some packages under this project require automatic generation of FFI import packages using
 ffipkg version 1.1.3 and higher. Below you can find recommendations how to build these packages
 
-1 Automatic package for glfw (AUTOGLFW)
+0. For all packages:
+
+Make sure the foreign library required is installed properly. 
+Note the librray installation path and path to its headers, if any.
+Create an empty directory and change to it. 
+Type the library-specific commands and make sure the process completes
+without errors.
+Type "cabal install"
+Type "ghc-pkg list" and verify that the Haskell package has been installed.
+
+1. Automatic package for glfw/GL (AUTOGLFW) for glfw.a v2.6 (www.libglfw.org)
 
 ffipkg -p AUTOGLFW -L /path/to/directory/with/glfw_dot_a -lglfw /path/to/glfw.h
+
+
+

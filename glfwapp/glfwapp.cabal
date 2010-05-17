@@ -1,0 +1,14 @@
+name:           glfwapp 
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       GLFW-based applications support 
+category:       graphics, user interface
+description:
+    A minimal wrapper on top of auto-generated bindings to glfw, gl, and glu
+    libraries.
+build-type:     Simple
+build-depends:  base >= 4.0, AUTOGLFW
+exposed-modules:
+    Graphics.UI.GLFWApp, Graphics.UI.GLFWApp.Events
+
