@@ -8,7 +8,7 @@ description:
     A minimal wrapper on top of auto-generated bindings to glfw, gl, and glu
     libraries.
 build-type:     Simple
-build-depends:  base >= 4.0, AUTOGLFW
+build-depends:  base >= 4.0, utf8-string >= 0.3.6, bytestring >= 0.9.1.6, AUTOGLFW
 exposed-modules:
-    Graphics.UI.GLFWApp, Graphics.UI.GLFWApp.Events
+    Graphics.UI.GLFWApp
 
