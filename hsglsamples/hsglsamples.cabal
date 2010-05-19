@@ -1,0 +1,16 @@
+name:           hsglsamples 
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       Example GLFW+Haskell applications
+category:       graphics, user interface
+description:
+    Example programs for GLFW+GL+Haskell
+build-type:     Simple
+build-depends:  base >= 4.0, containers >= 0.3.0.0, glfwapp >= 0.1, shapes2d >= 0.1
+
+executable:     shclicks
+main-is:        shclicks.hs
+extra-libraries: GL, GLU, Xrandr
+
+

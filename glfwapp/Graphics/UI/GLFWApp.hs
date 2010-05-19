@@ -17,8 +17,8 @@ module Graphics.UI.GLFWApp (
   module HS_AUTOGLFW_H
  ,GLFWEvent (..)
  ,GLFWApp (..)
+ ,GLFWAppData (..)
  ,defaultApp
- ,AppEventHandler
  ,glfwMain
  ,winSize
  ,glMousePos
@@ -47,10 +47,29 @@ data GLFWEvent =
  | MousePos Int Int                -- ^ Mouse move: position (x, y in mouse coordinates, not OGL!!!)
   deriving (Eq, Show)
 
+-- | Type class for a GLFW application custom data. Methods are provided for event
+-- handling, and for initializing/updating/redrawing of the window contents.
+
+class GLFWAppData gst where
+  eventHandler :: gst -> GLFWEvent -> IO gst
+  eventHandler gst e = return gst
+  needRedraw :: gst -> Bool
+  needRedraw gst = False
+  redrawProc :: gst -> IO ()
+  redrawProc gst = return ()
+  reshapeProc :: gst -> Int -> Int  -> IO ()
+  reshapeProc = const defaultReshape
+  initProc :: gst -> IO ()
+  initProc = const defaultInit
+  postedEvents :: gst -> [GLFWEvent]
+  postedEvents = const []
+
+instance GLFWAppData () -- Dummy instance for a default application.
+
 -- | Data type to describe basic parameters of a GLFW application. It is parameterized
 -- by user-defined state type (gst).
 
-data GLFWApp gst = GLFWApp {
+data GLFWApp = GLFWApp {
    winWidth :: Int                 -- ^ Application window initial width in pixels
   ,winHeight :: Int                -- ^ Application window initial height in pixels
   ,redBits :: Int                  -- ^ Red color depth in bits
@@ -61,18 +80,11 @@ data GLFWApp gst = GLFWApp {
   ,stencilBits :: Int              -- ^ Stencil buffer bits
   ,winMode :: Int                  -- ^ Application mode (windowed/fullscreen)
   ,appTitle :: String              -- ^ Application title
-  ,reshapeProc :: Int -> Int -> IO () -- ^ Window reshape procedure called upon WindowSize
-  ,appInit :: IO ()                -- ^ Application initialization function called only once
-  ,appEvent :: AppEventHandler gst -- ^ Application event handling function
 }
-
--- | Function type of an application event handler function.
-
-type AppEventHandler gst = gst -> GLFWEvent -> IO (gst, Maybe GLFWEvent)
 
 -- | Default parameters of an application
 
-defaultApp :: GLFWApp gst
+defaultApp :: GLFWApp
 
 defaultApp = GLFWApp {
    winWidth = 400
@@ -84,10 +96,7 @@ defaultApp = GLFWApp {
   ,depthBits = 16
   ,stencilBits = 0
   ,appTitle = "Default GLFW application"
-  ,winMode = fromIntegral c_GLFW_WINDOW
-  ,reshapeProc = defaultReshape
-  ,appInit = defaultInit
-  ,appEvent = defaultHandler}
+  ,winMode = fromIntegral c_GLFW_WINDOW}
 
 -- | Get the current application window size in pixels (width, height).
 
@@ -115,9 +124,9 @@ glMousePos =
 -- | Main function for a GLFW application. It is to be called with the initial
 -- user-specified application state.
 
-glfwMain :: gst -> GLFWApp gst -> AppEventHandler gst -> IO ()
+glfwMain :: (GLFWAppData gst) => GLFWApp -> gst -> IO ()
 
-glfwMain gst app ae = do
+glfwMain app gst = do
   f_glfwInit
   t <- f_glfwOpenWindow (fromIntegral $ winWidth app)
                         (fromIntegral $ winHeight app)
@@ -141,7 +150,7 @@ glfwMain gst app ae = do
   w_glfwSetMouseButtonCallback_1 (mbcb ch) >>= f_glfwSetMouseButtonCallback
   w_glfwSetMouseWheelCallback_1 (mwcb ch) >>= f_glfwSetMouseWheelCallback
   w_glfwSetMousePosCallback_1 (mpcb ch) >>= f_glfwSetMousePosCallback
-  appInit app
+  initProc gst
   writeChan ch WindowRefresh
   mainLoop ch gst where
     mainLoop ch gst = do
@@ -149,9 +158,19 @@ glfwMain gst app ae = do
       case ec of
         True -> f_glfwWaitEvents >> mainLoop ch gst
         False -> do
-          e <- readChan ch
-          (gst', mbe) <- appEvent app gst e
-          when (isJust mbe) $ writeChan ch (fromJust mbe)
+          (f, e) <- readChan ch >>= \e' -> case e' of
+            WindowSize x y -> reshapeProc gst x y >> return (True, e')
+            WindowRefresh -> return (True, e')
+            WindowClose -> do
+              eventHandler gst WindowClose
+              f_glfwTerminate
+              exitWith ExitSuccess
+            _ -> return (False, e')
+          gst' <- eventHandler gst e
+          mapM_ (writeChan ch) (postedEvents gst')
+          when (f || needRedraw gst') $ do
+            redrawProc gst'
+            f_glfwSwapBuffers
           mainLoop ch gst'
           
 
@@ -185,7 +204,7 @@ defaultInit = do
 defaultHandler a e = return (a, Nothing)
 
 -- Same as withCString, but Unicode is supported (NB: glfw itself uses 
--- X11 function to set window tite which is not unicode capable).
+-- X11 function to set window title which is not unicode capable).
 
 withBString :: String -> (CString -> IO a) -> IO a
 
