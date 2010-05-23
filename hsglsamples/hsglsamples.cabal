@@ -13,4 +13,6 @@ executable:     shclicks
 main-is:        shclicks.hs
 extra-libraries: GL, GLU, Xrandr
 
-
+executable:     glviewer
+main-is:        glviewer.hs
+extra-libraries: GL, GLU, Xrandr
