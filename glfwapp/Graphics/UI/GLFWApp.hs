@@ -15,6 +15,7 @@
 
 module Graphics.UI.GLFWApp (
   module HS_AUTOGLFW_H
+ ,module Graphics.UI.GLFWApp.Texture
  ,GLFWEvent (..)
  ,GLFWApp (..)
  ,GLFWAppData (..)
@@ -30,6 +31,7 @@ import Data.Maybe
 import System.Exit
 import Control.Monad
 import Control.Concurrent
+import Graphics.UI.GLFWApp.Texture
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as C
 

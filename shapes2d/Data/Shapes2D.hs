@@ -15,9 +15,11 @@
 
 module Data.Shapes2D (
   Point (..)
+ ,Rect (..)
  ,Edge (..)
  ,ShapeStore
  ,pts2shape
+ ,rect2pts
  ,ptInside) where
 
 import Data.List
@@ -31,6 +33,14 @@ data Point = Point {
   x :: Int
  ,y :: Int
 } deriving (Eq, Ord, Show)
+
+-- | A datatype for rectangles.
+
+data Rect = Rect {
+  rectOrig :: Point           -- ^ lower left corner
+ ,rectWdt :: Int              -- ^ width in pixels
+ ,rectHgt :: Int              -- ^ height in pixels
+} deriving (Show)
 
 -- | A datatype for a shape's edge. The type parameter s corresponds to the shape
 -- identifier which can be for example a number, but also anything else 
@@ -60,6 +70,19 @@ pts2shape [p1, p2] sh s = addedge p1 p2 1 sh s
 pts2shape (p1:p2:pts) sh s = p2s p1 (p2:pts) 2 (pts2shape [p1, p2] sh s) where
   p2s p1 [pl] j s = addedge pl p1 j sh s
   p2s p1 (px:py:ps) j s = p2s p1 (py:ps) (j + 1) (addedge px py j sh s)
+
+-- | Given a rectangle, produce a list of Points in the order: left lower, right lower,
+-- right upper, left upper (so it can be processed by 'pts2shape').
+
+rect2pts :: Rect -> [Point]
+
+rect2pts r@Rect {rectOrig = Point ox oy} =
+  let lflw = rectOrig r
+      rtlw = Point (ox + rectWdt r) oy
+      rtup = Point (x rtlw) (oy + rectHgt r)
+      lfup = Point ox (y rtup)
+  in  [lflw, rtlw, rtup, lfup]
+      
 
 -- | Find all shapes the given point is inside of. The function uses a well-known method
 -- of running a straight line upwards from the point of interest, and counting intersections
