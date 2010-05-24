@@ -94,7 +94,7 @@ drawTexture txr rect = do
                     ,c_GL_CLAMP
                     ,c_GL_CLAMP]
    f_glBindTexture (fromIntegral c_GL_TEXTURE_2D) (texName txr)
-   let (tx, ty) = (rectWdt rect, rectHgt rect)
+   let (tx, ty) = (ox + rectWdt rect, oy + rectHgt rect)
        (ox, oy) = (x $ rectOrig rect, y $ rectOrig rect)
        w = imgWidth txr
        h = imgHeight txr
@@ -107,7 +107,7 @@ drawTexture txr rect = do
    f_glTexCoord2d (fromIntegral w/fromIntegral tw) 0 
    f_glVertex2i (fromIntegral tx) (fromIntegral ty)
    f_glTexCoord2d 0 0
-   f_glVertex2i (fromIntegral oy) (fromIntegral ty)
+   f_glVertex2i (fromIntegral ox) (fromIntegral ty)
    f_glEnd
    f_glDisable (fromIntegral c_GL_TEXTURE_2D)
    f_glFlush

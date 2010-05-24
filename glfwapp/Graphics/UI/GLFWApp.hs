@@ -22,6 +22,7 @@ module Graphics.UI.GLFWApp (
  ,defaultApp
  ,glfwMain
  ,winSize
+ ,winRect
  ,glMousePos
 ) where
 
@@ -29,6 +30,7 @@ import HS_AUTOGLFW_H
 import Data.Char
 import Data.Maybe
 import System.Exit
+import Data.Shapes2D
 import Control.Monad
 import Control.Concurrent
 import Graphics.UI.GLFWApp.Texture
@@ -111,6 +113,14 @@ winSize =
     h <- peek ph >>= return . fromIntegral
     return (w, h)
 
+-- | Get the rectangle of the current application window.
+
+winRect :: IO Rect
+
+winRect = do
+  (w, h) <- winSize
+  return Rect {rectOrig = Point 0 0, rectWdt = w, rectHgt = h}
+
 -- | Get the current mouse position in OpenGL integer coordinates.
 
 glMousePos :: IO (Int, Int)
@@ -161,7 +171,7 @@ glfwMain app gst = do
         True -> f_glfwWaitEvents >> mainLoop ch gst
         False -> do
           (f, e) <- readChan ch >>= \e' -> case e' of
-            WindowSize x y -> reshapeProc gst x y >> return (True, e')
+            WindowSize x y -> reshapeProc gst x y >> return (False, e')
             WindowRefresh -> return (True, e')
             WindowClose -> do
               eventHandler gst WindowClose

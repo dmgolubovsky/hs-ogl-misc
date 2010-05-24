@@ -20,6 +20,8 @@ module Data.Shapes2D (
  ,ShapeStore
  ,pts2shape
  ,rect2pts
+ ,scale2fit
+ ,ctrrect
  ,ptInside) where
 
 import Data.List
@@ -83,6 +85,35 @@ rect2pts r@Rect {rectOrig = Point ox oy} =
       lfup = Point ox (y rtup)
   in  [lflw, rtlw, rtup, lfup]
       
+
+-- | Scale rectangle `ri' to fit into rectangle `ro', possibly leaving some horizontal
+-- or vertical unused space in `ro'. Origin of the result will be same as origin of `ri'
+
+scale2fit :: Rect -> Rect -> Rect
+
+scale2fit ro ri =
+  let aspect = ((fromIntegral $ rectWdt ri) / (fromIntegral $ rectHgt ri)) :: Double
+      h1 = floor $ (fromIntegral $ rectWdt ro) / aspect
+      w2 = floor $ (fromIntegral $ rectHgt ro) * aspect
+      f1 = h1 <= rectHgt ro
+      f2 = w2 <= rectWdt ro
+  in  case (f1, f2) of
+        (True,  True) -> ro {rectOrig = rectOrig ri}
+        (False, False) -> ri
+        (True,  False) -> ro {rectOrig = rectOrig ri, rectHgt = h1}
+        (False, True) -> ro {rectOrig = rectOrig ri, rectWdt = w2}
+
+-- | Center rectangle `ri' within rectange `ro'. by adjusting origin of the former.
+-- If `ri' does not fit, 'Nothing' is returned.
+
+ctrrect :: Rect -> Rect -> Maybe Rect
+
+ctrrect ro ri | rectWdt ri > rectWdt ro || rectHgt ri > rectHgt ro = Nothing
+
+ctrrect ro@Rect {rectOrig = Point xo yo} ri = 
+  let yoff = (rectHgt ro - rectHgt ri) `div` 2
+      xoff = (rectWdt ro - rectWdt ri) `div` 2
+  in  Just ri {rectOrig = Point (xo + xoff) (yo + yoff)}
 
 -- | Find all shapes the given point is inside of. The function uses a well-known method
 -- of running a straight line upwards from the point of interest, and counting intersections

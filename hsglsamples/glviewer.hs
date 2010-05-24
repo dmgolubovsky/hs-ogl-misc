@@ -42,11 +42,13 @@ main = do
 redraw VWR {texture = Nothing} = return ()
 
 redraw gst@VWR {texture = Just txr} = do
-   (tx, ty) <- winSize
+   wrect <- winRect
    let rect = Rect {rectOrig = Point 0 0
-                   ,rectWdt = tx
-                   ,rectHgt = ty}
-   drawTexture txr rect
+                   ,rectWdt = imgWidth txr
+                   ,rectHgt = imgHeight txr}
+       srect = scale2fit wrect rect
+       crect = fromMaybe srect (ctrrect wrect srect)
+   drawTexture txr crect
 
 evt gst'' WindowRefresh = do
   case texture gst'' of
