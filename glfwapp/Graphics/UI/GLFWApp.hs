@@ -24,6 +24,7 @@ module Graphics.UI.GLFWApp (
  ,winSize
  ,winRect
  ,glMousePos
+ ,glMousePosRatio
 ) where
 
 import HS_AUTOGLFW_H
@@ -53,6 +54,8 @@ data GLFWEvent =
 
 -- | Type class for a GLFW application custom data. Methods are provided for event
 -- handling, and for initializing/updating/redrawing of the window contents.
+-- Note that the default redrawProc calls gluOrtho2D 0 x 0 y where x and y are window
+-- dimensions in pixels after resize. This works well with 'glMousePos'
 
 class GLFWAppData gst where
   eventHandler :: gst -> GLFWEvent -> IO gst
@@ -121,7 +124,7 @@ winRect = do
   (w, h) <- winSize
   return Rect {rectOrig = Point 0 0, rectWdt = w, rectHgt = h}
 
--- | Get the current mouse position in OpenGL integer coordinates.
+-- | Get the current mouse position in OpenGL integer coordinates (window pixels).
 
 glMousePos :: IO (Int, Int)
 
@@ -132,6 +135,21 @@ glMousePos =
     y <- peek ph >>= return . fromIntegral
     (w, h) <- winSize
     return (x, h - y)
+
+-- | Get the current mouse position ratios to window dimensions.
+
+glMousePosRatio :: IO (Double, Double)
+
+glMousePosRatio =
+  alloca $ \pw -> alloca $ \ph -> alloca $ \mx -> alloca $ \my -> do
+    f_glfwGetWindowSize pw ph
+    f_glfwGetMousePos mx my
+    w <- peek pw >>= return . fromIntegral
+    h <- peek ph >>= return . fromIntegral
+    x <- peek mx >>= return . fromIntegral
+    y <- peek my >>= return . fromIntegral
+    let y' = h - y
+    return (x / w, y' / h)
 
 -- | Main function for a GLFW application. It is to be called with the initial
 -- user-specified application state.

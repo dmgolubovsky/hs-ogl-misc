@@ -9,6 +9,10 @@ description:
 build-type:     Simple
 build-depends:  base >= 4.0, containers >= 0.3.0.0, glfwapp >= 0.1, shapes2d >= 0.1
 
+executable:     shrelclicks
+main-is:        shrelclicks.hs
+extra-libraries: GL, GLU, Xrandr
+
 executable:     shclicks
 main-is:        shclicks.hs
 extra-libraries: GL, GLU, Xrandr
