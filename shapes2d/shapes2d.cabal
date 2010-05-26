@@ -7,7 +7,7 @@ category:       data structures, graphics
 description:
     Two-dimensional polygonal shapes and operations over them.
 build-type:     Simple
-build-depends:  base >= 4.0, containers
+build-depends:  base >= 4.0, containers >= 0.3.0.0, parsec == 2.1.0.1
 exposed-modules:
-    Data.Shapes2D
+    Data.Shapes2D, Data.SVGPath
 
