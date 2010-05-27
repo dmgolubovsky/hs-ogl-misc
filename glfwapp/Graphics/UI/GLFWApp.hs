@@ -57,24 +57,25 @@ data GLFWEvent =
 -- Note that the default redrawProc calls gluOrtho2D 0 x 0 y where x and y are window
 -- dimensions in pixels after resize. This works well with 'glMousePos'
 
-class GLFWAppData gst where
-  eventHandler :: gst -> GLFWEvent -> IO gst
-  eventHandler gst e = return gst
-  needRedraw :: gst -> Bool
-  needRedraw gst = False
-  redrawProc :: gst -> IO ()
-  redrawProc gst = return ()
-  reshapeProc :: gst -> Int -> Int  -> IO ()
+class GLFWAppData app where
+  eventHandler :: app -> GLFWEvent -> IO app
+  eventHandler app e = return app
+  needRedraw :: app -> Bool
+  needRedraw app = False
+  redrawProc :: app -> IO ()
+  redrawProc app = return ()
+  doneRedraw :: app -> app
+  doneRedraw = id
+  reshapeProc :: app -> Int -> Int  -> IO ()
   reshapeProc = const defaultReshape
-  initProc :: gst -> IO ()
+  initProc :: app -> IO ()
   initProc = const defaultInit
-  postedEvents :: gst -> [GLFWEvent]
+  postedEvents :: app -> [GLFWEvent]
   postedEvents = const []
 
 instance GLFWAppData () -- Dummy instance for a default application.
 
--- | Data type to describe basic parameters of a GLFW application. It is parameterized
--- by user-defined state type (gst).
+-- | Data type to describe basic parameters of a GLFW application.
 
 data GLFWApp = GLFWApp {
    winWidth :: Int                 -- ^ Application window initial width in pixels
@@ -201,7 +202,7 @@ glfwMain app gst = do
           when (f || needRedraw gst') $ do
             redrawProc gst'
             f_glfwSwapBuffers
-          mainLoop ch gst'
+          mainLoop ch (doneRedraw gst')
           
 
                         

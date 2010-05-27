@@ -23,6 +23,7 @@ instance GLFWAppData VWR where
   needRedraw = nredraw
   redrawProc = redraw
   eventHandler = evt
+  doneRedraw gst = gst {nredraw = False}
 
  
 main = do

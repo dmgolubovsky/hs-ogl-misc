@@ -34,6 +34,7 @@ instance GLFWAppData GST where
   redrawProc = redraw
   reshapeProc = reshape
   eventHandler = evt
+  doneRedraw gst = gst {nredraw = False}
 
 evt gst evt = case evt of
   MouseButton b a | b == fromIntegral c_GLFW_MOUSE_BUTTON_LEFT && 
