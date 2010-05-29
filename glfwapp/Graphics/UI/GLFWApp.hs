@@ -199,10 +199,12 @@ glfwMain app gst = do
             _ -> return (False, e')
           gst' <- eventHandler gst e
           mapM_ (writeChan ch) (postedEvents gst')
-          when (f || needRedraw gst') $ do
-            redrawProc gst'
-            f_glfwSwapBuffers
-          mainLoop ch (doneRedraw gst')
+          case f || needRedraw gst' of
+            True -> do
+              redrawProc gst'
+              f_glfwSwapBuffers
+              mainLoop ch (doneRedraw gst')
+            False -> mainLoop ch gst'
           
 
                         
