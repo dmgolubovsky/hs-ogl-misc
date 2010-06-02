@@ -38,7 +38,7 @@ data GLTexture = GLTexture {
   texName :: !CUInt            -- ^ OpenGL texture number
  ,imgWidth :: !Int             -- ^ Original image width
  ,imgHeight :: !Int            -- ^ Original image height
-}
+} deriving (Show)
 
 -- | Load an image from a file, convert it to bitmap and generate
 -- a texture.
@@ -77,7 +77,6 @@ drawTexture :: GLTexture -> Rect -> IO ()
 
 drawTexture txr rect = do
    f_glPixelStorei (fromIntegral c_GL_UNPACK_ALIGNMENT) 1
-   f_glClear (fromIntegral c_GL_COLOR_BUFFER_BIT)
    f_glEnable (fromIntegral c_GL_TEXTURE_2D)
    f_glTexEnvf (fromIntegral c_GL_TEXTURE_ENV) 
                (fromIntegral c_GL_TEXTURE_ENV_MODE) 

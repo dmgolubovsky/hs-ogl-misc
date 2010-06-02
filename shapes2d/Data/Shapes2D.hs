@@ -18,6 +18,7 @@ module Data.Shapes2D (
  ,Rect (..)
  ,Edge (..)
  ,ShapeStore
+ ,emptyStore
  ,pts2shape
  ,rect2pts
  ,scale2fit
@@ -61,6 +62,12 @@ data (Eq s, Ord s) => Edge s = Edge {
 -- the same highest Y value, additional Sets are used.
 
 type ShapeStore s = M.Map Int (S.Set (Edge s))
+
+-- | Returns an empty shapes storage.
+
+emptyStore :: ShapeStore a
+
+emptyStore = M.empty
 
 -- | Create a shape (or part of a shape) from a list of 'Point's. This function creates
 -- a number of edges belonging to a given shape. The edges always compose a closed path
@@ -130,6 +137,7 @@ ptInside pt s =
   in  map head $                     -- list of shapes containing the point
       filter (odd . length) $        -- keep lists with odd length
       group $                        -- group by each shape: each list length is N of intersections
+      sort $
       map shape $                    -- select owning shapes
       filter (below mx my) $         -- only those edges lying above the point
       filter (projects mx) $         -- only those edges whose projection on X contains point's x
@@ -156,6 +164,7 @@ below mx my e =
   in  yf < hproj
 
 addedge :: (Eq s, Ord s) => Point -> Point -> Int -> s -> ShapeStore s -> ShapeStore s
+addedge ps pe _ _ s | ps == pe = s
 addedge ps pe j sh s =
   let e = Edge {
         shape = sh
