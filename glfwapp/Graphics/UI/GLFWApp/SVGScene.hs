@@ -26,7 +26,9 @@ import Data.Maybe
 import Data.Shapes2D
 import Data.SVGPath
 import Text.XML.Light
-import Graphics.UI.GLFWApp
+import Graphics.UI.GLFWApp.Texture
+import Graphics.UI.GLFWApp.Events
+
 
 -- | A datatype for polygonal shapes demarking click-sensitive areas of scenes.
 
