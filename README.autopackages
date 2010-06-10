@@ -15,5 +15,8 @@ Type "ghc-pkg list" and verify that the Haskell package has been installed.
 
 ffipkg -p AUTOGLFW -L /path/to/directory/with/glfw_dot_a -lglfw /path/to/glfw.h
 
+2. Automatic package for Freetype2 (tested with 2.3.7 so far)
+
+ffipkg -p AUTOFT2 -lfreetype /usr/include/freetype2/freetype/freetype.h 
 
 

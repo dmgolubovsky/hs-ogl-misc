@@ -16,6 +16,7 @@
 module Graphics.UI.GLFWApp (
   module HS_AUTOGLFW_H
  ,module Graphics.UI.GLFWApp.Texture
+ ,module Graphics.UI.GLFWApp.Freetype
  ,module Graphics.UI.GLFWApp.Events
  ,module Graphics.UI.GLFWApp.SVGScene
 ) where
@@ -24,5 +25,6 @@ import HS_AUTOGLFW_H
 import Graphics.UI.GLFWApp.Texture
 import Graphics.UI.GLFWApp.Events
 import Graphics.UI.GLFWApp.SVGScene
+import Graphics.UI.GLFWApp.Freetype
 
 
