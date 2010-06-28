@@ -1,0 +1,18 @@
+name:           csp-handles 
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       GHC IO Handles backed by stream processors
+category:       graphics, user interface
+description:
+    New GHC runtime provides API to implement I/O Handles backed by arbitrary
+    instances of GHC.IO.Device and GHC.IO.BufferedIO classes. This package
+    provides such implementation of Handles backed by continuation-based
+    stream processor functions.
+build-type:     Simple
+build-depends:  base >= 4.2.0.1, bytestring >= 0.9.1.6
+extensions:     DeriveDataTypeable
+
+exposed-modules:
+    GHC.IO.CSPHandle
+
