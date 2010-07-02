@@ -143,5 +143,30 @@ bootstrapAction f s g = do
   let exfail (ExitFailure _) = True
       exfail _ = False
   when (exfail ex) $ die "ghc-pkg failed to initialize package configuration:\n"
+{-
+  pp <- privateProcess "set | less"
+  (_, _, _, p) <- createProcess pp
+  waitForProcess p
+-}  
   return ()
+
+-- Utility: create a process descriptor from given command operating in the project's
+-- current directory and having environment variable GHC_PACKAGE_PATH set to
+-- the project's private package storage. Standard I/O handles are set to Inherit,
+-- but may be adjusted later when actually run the process.
+
+privateProcess :: String -> IO CreateProcess
+privateProcess cmd = do
+  cd <- getCurrentDirectory
+  env <- getEnvironment
+  let env' = filter ((/= "GHC_PACKAGE_PATH") . fst) env
+  return CreateProcess {
+    cmdspec = ShellCommand cmd
+   ,cwd = Just (cd </> subdir)
+   ,env = Just (("GHC_PACKAGE_PATH", pkgdir):env')
+   ,std_in = Inherit
+   ,std_out = Inherit
+   ,std_err = Inherit
+   ,close_fds = False
+  }
 
