@@ -17,6 +17,8 @@ module Main where
 
 import qualified Paths_capri
 import Data.List
+import Data.Maybe
+import System.IO
 import System.Directory
 import System.FilePath
 import System.Process
@@ -109,13 +111,40 @@ capriGlobalCommand = CommandUI {
       ]
   }
 
-bootpkgs = ["ffi", "rts", "integer-gmp", "base-4*"]
+bootpkgs = ["ffi", "rts", "ghc-prim", "integer-gmp", "base-4*"]
 
 subdir = ".capri"
 pkgdir = subdir </> "packages"
 instdir = subdir </> "install"
 
-commands = [bootstrapCommand `commandAddAction` bootstrapAction]
+commands = [bootstrapCommand `commandAddAction` bootstrapAction
+           ,listCommand `commandAddAction` listAction]
+
+-- List packages installed privately. Equivalent to running ghc-pkg list
+-- as a "private" process.
+
+listCommand :: CommandUI ()
+
+listCommand = CommandUI {
+  commandName         = "list"
+ ,commandSynopsis     = "List packages installed privately"
+ ,commandUsage        = (++ " list")
+ ,commandDescription  = Just $ \pname -> "Use this command to list packages installed " ++
+                                         "privately for this project.\n" ++ pname ++ " will " ++
+                                         "run the ghc-pkg utility to perform this action\n\n"
+ ,commandDefaultFlags = ()
+ ,commandOptions = const []
+}
+
+listAction f s g = do
+  (_, _, _, p) <- privateProcess "ghc-pkg list" >>= createProcess
+  waitForProcess p
+  return ()
+
+-- Bootstrap a private per-project package configuration. Create a subdirectory .capri
+-- where packages will be installed. Subdirectory .capri/packages will hold packages
+-- cache and descriptions; subdirectory .capri/install will hold compiled libraries and
+-- executables.
 
 bootstrapCommand :: CommandUI ()
 
@@ -132,22 +161,26 @@ bootstrapCommand = CommandUI {
  ,commandOptions = const []
 }
 
--- Bootstrap a private per-project package configuration. Create a subdirectory .capri
--- where packages will be installed. Subdirectory .capri/packages will hold packages
--- cache and descriptions; subdirectory .capri/install will hold compiled libraries and
--- executables.
-
 bootstrapAction f s g = do
   mapM createDirectory [subdir, instdir]
   ex <- runCommand ("ghc-pkg init " ++ pkgdir) >>= waitForProcess
   let exfail (ExitFailure _) = True
       exfail _ = False
   when (exfail ex) $ die "ghc-pkg failed to initialize package configuration:\n"
-{-
-  pp <- privateProcess "set | less"
-  (_, _, _, p) <- createProcess pp
-  waitForProcess p
--}  
+  mapM clonePackage bootpkgs
+  return ()
+
+-- Clone a package. This is same as running ghc-pkg describe as a "public" process,
+-- and running ghc-pkg register as a "private" process.
+
+clonePackage :: String -> IO ()
+
+clonePackage pkg = do
+  cwd <- getCurrentDirectory
+  descr <- publicProcess ("ghc-pkg describe " ++ pkg) cwd
+  regst <- privateProcess "ghc-pkg register -"
+  (_, _, p) <- runPipe Inherit Inherit [descr, regst]
+  mapM waitForProcess p
   return ()
 
 -- Utility: create a process descriptor from given command operating in the project's
@@ -163,10 +196,69 @@ privateProcess cmd = do
   return CreateProcess {
     cmdspec = ShellCommand cmd
    ,cwd = Just (cd </> subdir)
-   ,env = Just (("GHC_PACKAGE_PATH", pkgdir):env')
+   ,env = Just (("GHC_PACKAGE_PATH", cd </> pkgdir):env')
    ,std_in = Inherit
    ,std_out = Inherit
    ,std_err = Inherit
    ,close_fds = False
   }
+
+-- Utility: create a process descriptor to run a command without environment
+-- adjustments, in given current directory.
+
+publicProcess :: String -> FilePath -> IO CreateProcess
+
+publicProcess cmd dir = return CreateProcess {
+    cmdspec = ShellCommand cmd
+   ,cwd = Just dir
+   ,env = Nothing
+   ,std_in = Inherit
+   ,std_out = Inherit
+   ,std_err = Inherit
+   ,close_fds = False
+}
+
+-- Utility: pipe processes together. Two StdStream's must be supplied: for pipeline's
+-- stdin and stdout. Stderr's of all processes always inherit from the process running
+-- the pipeline. List of process handles is returned as well as handles for pipe ends..
+
+runPipe :: StdStream            -- stdin
+        -> StdStream            -- stdout
+        -> [CreateProcess]      -- processes (start at left, end at right)
+        -> IO (Maybe Handle     -- pipe in
+              ,Maybe Handle     -- pipe out
+              ,[ProcessHandle]) -- same order as in the input list of descriptors
+
+runPipe ins outs [] = return (Nothing, Nothing, [])
+
+runPipe ins outs [p] = do
+  let p' = p {std_in = ins, std_out = outs}
+  (pin, pout, _, ph) <- createProcess p'
+  return (pin, pout, [ph])
+
+runPipe ins outs (pstart:ps) = do
+  let pstart' = pstart {std_in = ins}
+      prev@(pend:rps) = reverse (pstart':ps)
+      pend' = pend {std_out = outs}
+  piper (pend':rps) [] Nothing Nothing
+
+piper :: [CreateProcess] 
+      -> [ProcessHandle] 
+      -> Maybe Handle
+      -> Maybe Handle
+      -> IO (Maybe Handle, Maybe Handle, [ProcessHandle])
+
+piper [] phs pin pend = return (pin, pend, phs)
+
+piper (p:ps) [] Nothing Nothing = do
+  let p' = p {std_in = CreatePipe}
+  (pin, pend, _, ph) <- createProcess p'
+  piper ps [ph] pin pend
+
+piper (p:ps) phs pin pend = do
+  let p' = p {std_in = CreatePipe, std_out = UseHandle (fromJust pin)}
+  (pin', _, _, ph) <- createProcess p'
+  piper ps (ph:phs) pin' pend
+
+
 
