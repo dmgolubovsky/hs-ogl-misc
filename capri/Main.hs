@@ -48,7 +48,7 @@ mainWorker args = topHandler $
           | fromFlag (globalNumericVersion globalflags) -> printNumericVersion
         CommandHelp     help           -> printCommandHelp help
         CommandList     opts           -> printOptionsList opts
-        CommandErrors   errs           -> processErrors args errs $ printErrors errs
+        CommandErrors   errs           -> printErrors errs
         CommandReadyToGo action        -> action globalflags
   where
      printCommandHelp help = do
@@ -66,22 +66,6 @@ mainWorker args = topHandler $
                                    ++ display cabalVersion
                                    ++ " of the Cabal library "
 
--- Process errors as they possibly mean just a command for Cabal. Otherwise
--- do the default action.
-
-processErrors :: [String] -> [String] -> IO () -> IO ()
-
-processErrors args errs dflt = putStrLn (show errs) >> case errs of
-  [] -> dflt
-  (m:_) -> case words m of
-    ("unrecognised":"command:":_) -> cabalInstall args
-    _ -> dflt
-
--- (TODO) Run the cabal executable with proper environment settings.
-
-cabalInstall :: [String] -> IO ()
-cabalInstall args = 
-  putStrLn $ "running Cabal with " ++ show args
 
 -- Print global help message
 
@@ -118,7 +102,87 @@ pkgdir = subdir </> "packages"
 instdir = subdir </> "install"
 
 commands = [bootstrapCommand `commandAddAction` bootstrapAction
-           ,listCommand `commandAddAction` listAction]
+           ,listCommand `commandAddAction` listAction
+           ,cloneCommand `commandAddAction` cloneAction
+           ,ghcpkgCommand `commandAddAction` ghcpkgAction
+           ,cabalCommand `commandAddAction` cabalAction]
+
+-- Invoke cabal to run arbitrary action as a private process.
+
+cabalCommand :: CommandUI ()
+
+cabalCommand = CommandUI {
+  commandName         = "cabal"
+ ,commandSynopsis     = "Invoke the cabal-install program to run arbitrary " ++
+                        "action on private packages"
+ ,commandUsage        = (++ " cabal -- <cabal options>")
+ ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
+                                         "cabal-install on the privately installed packages.\n" ++
+                                         "Use double-hyphen (--) before any command parameters " ++
+                                         "to avoid interpretation of them by " ++ pname ++ "\n\n"
+ ,commandDefaultFlags = ()
+ ,commandOptions = const []
+}
+
+cabalAction f s g = do
+  cd <- getCurrentDirectory
+  let dbopt = "--package-db=" ++ (cd </> pkgdir)
+      pfxopt = "--prefix=" ++ (cd </> instdir)
+  (_, _, _, p) <- privateProcessRaw "cabal" (s {- ++ [dbopt, pfxopt] -}) >>= createProcess
+  waitForProcess p
+  return ()
+
+-- Invoke ghc-pkg to run arbitrary action as a private process.
+
+ghcpkgCommand :: CommandUI ()
+
+ghcpkgCommand = CommandUI {
+  commandName         = "ghc-pkg"
+ ,commandSynopsis     = "Invoke the ghc-pkg program to run arbitrary action on private packages"
+ ,commandUsage        = (++ " ghc-pkg -- <ghc-pkg options>")
+ ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
+                                         "ghc-pkg on the privately installed packages.\n" ++
+                                         "Use double-hyphen (--) before any command parameters " ++
+                                         "to avoid interpretation of them by " ++ pname ++ "\n\n"
+ ,commandDefaultFlags = ()
+ ,commandOptions = const []
+}
+
+ghcpkgAction f s g = do
+  (_, _, _, p) <- privateProcessRaw "ghc-pkg" s >>= createProcess
+  waitForProcess p
+  return ()
+
+-- Clone a package installed publicly into the private package database.
+-- Exactly this action is performed by the bootstrap command on certain
+-- essential packages. Note that --force option will not be passed to
+-- ghc-pkg, so if some dependencies are missing, this has to be manually resolved.
+
+cloneCommand :: CommandUI ()
+
+cloneCommand = CommandUI {
+  commandName         = "clone"
+ ,commandSynopsis     = "Clone package(s) installed publicly into the private packages database"
+ ,commandUsage        = (++ " clone <package name> [...<package name>]")
+ ,commandDescription  = Just $ \pname -> "Use this command to install previously compiled " ++
+                                         "package(s) from global \nor user database into the " ++
+                                         "private database via running ghc-pkg.\n" ++
+                                         "Package files (libraries, executables) will not be " ++
+                                         "copied; \njust the description of the " ++ 
+                                         "package will be transferred.\n" ++
+                                         "Note that the --force flag will not be " ++
+                                         "passed to ghc-pkg,\nso if any package dependencies " ++
+                                         "are missing, cloning will not be completed\n" ++
+                                         "It is a good idea to specify package " ++
+                                         "version explicitly\n\n"
+ ,commandDefaultFlags = ()
+ ,commandOptions = const []
+}
+
+cloneAction f s g = do
+  when (null s) $ die "at least one package name to clone should be specified"
+  mapM clonePackage s
+  return ()
 
 -- List packages installed privately. Equivalent to running ghc-pkg list
 -- as a "private" process.
@@ -189,12 +253,17 @@ clonePackage pkg = do
 -- but may be adjusted later when actually run the process.
 
 privateProcess :: String -> IO CreateProcess
-privateProcess cmd = do
+privateProcess = privateProcess' . ShellCommand
+
+privateProcessRaw :: FilePath -> [String] -> IO CreateProcess
+privateProcessRaw prog args = privateProcess' (RawCommand prog args)
+
+privateProcess' cmd = do
   cd <- getCurrentDirectory
   env <- getEnvironment
   let env' = filter ((/= "GHC_PACKAGE_PATH") . fst) env
   return CreateProcess {
-    cmdspec = ShellCommand cmd
+    cmdspec = cmd
    ,cwd = Just (cd </> subdir)
    ,env = Just (("GHC_PACKAGE_PATH", cd </> pkgdir):env')
    ,std_in = Inherit
@@ -219,8 +288,8 @@ publicProcess cmd dir = return CreateProcess {
 }
 
 -- Utility: pipe processes together. Two StdStream's must be supplied: for pipeline's
--- stdin and stdout. Stderr's of all processes always inherit from the process running
--- the pipeline. List of process handles is returned as well as handles for pipe ends..
+-- stdin and stdout. Stderr's of all processes are as set in the process creation
+-- descriptors. List of process handles is returned as well as handles for pipe ends.
 
 runPipe :: StdStream            -- stdin
         -> StdStream            -- stdout
