@@ -105,30 +105,75 @@ commands = [bootstrapCommand `commandAddAction` bootstrapAction
            ,listCommand `commandAddAction` listAction
            ,cloneCommand `commandAddAction` cloneAction
            ,ghcpkgCommand `commandAddAction` ghcpkgAction
-           ,cabalCommand `commandAddAction` cabalAction]
+           ,cabalCommand `commandAddAction` cabalAction
+           ,xCommand "install" `commandAddAction` xAction (CabalFlags False False) "install"
+           ,xCommand "configure" `commandAddAction` xAction (CabalFlags False False) "configure"
+           ,xCommand "build" `commandAddAction` xAction (CabalFlags True True) "build"]
+
+-- Shortcut commands to invoke predefined Cabal actions.
+
+xCommand :: String -> CommandUI ()
+
+xCommand cmd = CommandUI {
+  commandName         = cmd
+ ,commandSynopsis     = "Short-cut for cabal " ++ cmd ++ " command"
+ ,commandUsage        = (++ " " ++ cmd)
+ ,commandDescription  = Just $ \pname -> "This command is equivalent to:\n\n" ++
+                                         "     " ++ pname ++ " cabal -- " ++ cmd ++ "\n\n" ++
+                                         "with package database and install prefix " ++
+                                         "set properly.\n\n"
+ ,commandDefaultFlags = ()
+ ,commandOptions = const []
+}
+
+xAction cf cmd f s g = cabalAction cf [cmd] g
 
 -- Invoke cabal to run arbitrary action as a private process.
 
-cabalCommand :: CommandUI ()
+data CabalFlags = CabalFlags {
+  pkgdb :: Bool                      -- Include the "--package-db" flag
+ ,prefix :: Bool                     -- Include the "--prefix" flag
+}
+
+cabalCommand :: CommandUI CabalFlags
 
 cabalCommand = CommandUI {
   commandName         = "cabal"
  ,commandSynopsis     = "Invoke the cabal-install program to run arbitrary " ++
                         "action on private packages"
- ,commandUsage        = (++ " cabal -- <cabal options>")
+ ,commandUsage        = (++ " cabal -- <cabal command options>")
  ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
                                          "cabal-install on the privately installed packages.\n" ++
-                                         "Use double-hyphen (--) before any command parameters " ++
-                                         "to avoid interpretation of them by " ++ pname ++ "\n\n"
- ,commandDefaultFlags = ()
- ,commandOptions = const []
+                                         "Use double-hyphen (--) before any cabal parameters " ++
+                                         "to avoid interpretation of them by " ++ pname ++ ".\n" ++
+                                         "If the cabal command complains about unrecognized " ++
+                                         "options `--package-db' or `--prefix'\n" ++
+                                         "use -D or -P options BEFORE the double hyphen " ++
+                                         "to omit them.\n\n"
+ ,commandDefaultFlags = CabalFlags False False
+ ,commandOptions = const [
+    OptionField {
+      optionName = "omit-package-db"
+     ,optionDescr = [
+        ChoiceOpt [
+          ("Omit the --package-db option for cabal commands that do not understand it"
+            ,(['D'], ["omit-package-db"])
+            ,(\flags -> flags {pkgdb = True})
+            ,pkgdb)
+         ,("Omit the --prefix option for cabal commands that do not understand it"
+            ,(['P'], ["omit-prefix"])
+            ,(\flags -> flags {prefix = True})
+            ,prefix)]
+      ]
+    }
+ ]
 }
 
-cabalAction f s g = do
+cabalAction (CabalFlags pkgdb prefix) s g = do
   cd <- getCurrentDirectory
-  let dbopt = "--package-db=" ++ (cd </> pkgdir)
-      pfxopt = "--prefix=" ++ (cd </> instdir)
-  (_, _, _, p) <- privateProcessRaw "cabal" (s {- ++ [dbopt, pfxopt] -}) >>= createProcess
+  let dbopt = if pkgdb then [] else ["--package-db=" ++ (cd </> pkgdir)]
+      pfxopt = if prefix then [] else ["--prefix=" ++ (cd </> instdir)]
+  (_, _, _, p) <- privateProcessRaw "cabal" (s ++ dbopt ++ pfxopt) >>= createProcess
   waitForProcess p
   return ()
 
@@ -139,11 +184,11 @@ ghcpkgCommand :: CommandUI ()
 ghcpkgCommand = CommandUI {
   commandName         = "ghc-pkg"
  ,commandSynopsis     = "Invoke the ghc-pkg program to run arbitrary action on private packages"
- ,commandUsage        = (++ " ghc-pkg -- <ghc-pkg options>")
+ ,commandUsage        = (++ " ghc-pkg -- <ghc-pkg command options>")
  ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
                                          "ghc-pkg on the privately installed packages.\n" ++
                                          "Use double-hyphen (--) before any command parameters " ++
-                                         "to avoid interpretation of them by " ++ pname ++ "\n\n"
+                                         "to avoid interpretation of them by " ++ pname ++ ".\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -174,7 +219,7 @@ cloneCommand = CommandUI {
                                          "passed to ghc-pkg,\nso if any package dependencies " ++
                                          "are missing, cloning will not be completed\n" ++
                                          "It is a good idea to specify package " ++
-                                         "version explicitly\n\n"
+                                         "version explicitly.\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -195,7 +240,7 @@ listCommand = CommandUI {
  ,commandUsage        = (++ " list")
  ,commandDescription  = Just $ \pname -> "Use this command to list packages installed " ++
                                          "privately for this project.\n" ++ pname ++ " will " ++
-                                         "run the ghc-pkg utility to perform this action\n\n"
+                                         "run the ghc-pkg utility to perform this action.\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -220,7 +265,7 @@ bootstrapCommand = CommandUI {
                                          "configuration of packages.\n" ++ pname ++ " will " ++
                                          "clone the following packages into the per-project " ++
                                          "packages directory: \n\n" ++
-                                         concat (intersperse " " bootpkgs) ++ "\n\n"
+                                         concat (intersperse " " bootpkgs) ++ ".\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -264,7 +309,7 @@ privateProcess' cmd = do
   let env' = filter ((/= "GHC_PACKAGE_PATH") . fst) env
   return CreateProcess {
     cmdspec = cmd
-   ,cwd = Just (cd </> subdir)
+   ,cwd = Just cd
    ,env = Just (("GHC_PACKAGE_PATH", cd </> pkgdir):env')
    ,std_in = Inherit
    ,std_out = Inherit
