@@ -101,14 +101,76 @@ subdir = ".capri"
 pkgdir = subdir </> "packages"
 instdir = subdir </> "install"
 
-commands = [bootstrapCommand `commandAddAction` bootstrapAction
-           ,listCommand `commandAddAction` listAction
-           ,cloneCommand `commandAddAction` cloneAction
-           ,ghcpkgCommand `commandAddAction` ghcpkgAction
-           ,cabalCommand `commandAddAction` cabalAction
-           ,xCommand "install" `commandAddAction` xAction (CabalFlags False False) "install"
-           ,xCommand "configure" `commandAddAction` xAction (CabalFlags False False) "configure"
-           ,xCommand "build" `commandAddAction` xAction (CabalFlags True True) "build"]
+commands = [
+  bootstrapCommand `commandAddAction` bootstrapAction
+ ,listCommand `commandAddAction` listAction
+ ,cloneCommand `commandAddAction` cloneAction
+ ,ghcpkgCommand `commandAddAction` ghcpkgAction
+ ,cabalCommand `commandAddAction` cabalAction
+ ,importCommand `commandAddAction` importAction
+ ,xCommand "install" `commandAddAction` xAction (CabalFlags False False False) "install"
+ ,xCommand "configure" `commandAddAction` xAction (CabalFlags False False False) "configure"
+ ,xCommand "build" `commandAddAction` xAction (CabalFlags True True False) "build"]
+
+-- Import another package into the private packages database. Importing means building
+-- within some other package's directory, but with respect to this package's private
+-- database and installation path.
+
+importCommand :: CommandUI CabalFlags
+
+importCommand = CommandUI {
+  commandName         = "import"
+ ,commandSynopsis     = "Build another package with respect to this package's private " ++
+                        "packages database and installation path"
+ ,commandUsage        = (++ " import directory -- <cabal or Setup command options>")
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to build another package with respect to this package private\n" ++
+    "packages database. Use double-hyphen (--) before  any build program parameters\n" ++
+    "to avoid interpretation of them by " ++ pname ++ ".\n" ++
+    "If only import directory is specified,    \"cabal install\" will be executed  in\n" ++ 
+    "that  directory.   If the build program complains about  unrecognized  options\n" ++ 
+    "`--package-db' or `--prefix' use -D or -P options BEFORE the double hyphen  to\n" ++
+    "omit them.  Use -S option  to  run  the package's  Setup.{hs|lhs} installation\n" ++ 
+    "program instead of cabal-install.\n\n"
+ ,commandDefaultFlags = CabalFlags False False False
+ ,commandOptions = const [
+    OptionField {
+      optionName = "omit-package-db"
+     ,optionDescr = [
+        ChoiceOpt [
+          ("Omit the --package-db option for build programs that do not understand it"
+            ,(['D'], ["omit-package-db"])
+            ,(\flags -> flags {pkgdb = True})
+            ,pkgdb)
+         ,("Omit the --prefix option for build programs that do not understand it"
+            ,(['P'], ["omit-prefix"])
+            ,(\flags -> flags {prefix = True})
+            ,prefix)
+         ,("Use the Setup.{hs|lhs} installation program instead of Cabal-install"
+            ,(['S'], ["setup"])
+            ,(\flags -> flags {setup = True})
+            ,prefix)]
+      ]
+    }
+ ]
+}
+
+importAction (CabalFlags pkgdb prefix setup) s g = do
+  when (null s) $ die "at least import directory has to be specified"
+  let dir = head s
+  cd <- getCurrentDirectory
+  doesDirectoryExist dir >>= return . not >>= flip when (die $ "import directory " ++ 
+                                                                dir ++ " does not exist")
+  let dbopt = if pkgdb then [] else ["--package-db=" ++ (cd </> pkgdir)]
+      pfxopt = if prefix then [] else ["--prefix=" ++ (cd </> instdir)]
+      (stp, prog) = if setup then (["Setup"], "runghc") else ([], "cabal")
+      cmds = case s of
+        [dir] -> ["install"]
+        _ -> tail s
+  pp <- privateProcessRaw prog (stp ++ cmds ++ dbopt ++ pfxopt)
+  (_, _, _, p) <- createProcess pp {cwd = Just dir}
+  waitForProcess p
+  return ()
 
 -- Shortcut commands to invoke predefined Cabal actions.
 
@@ -133,24 +195,25 @@ xAction cf cmd f s g = cabalAction cf [cmd] g
 data CabalFlags = CabalFlags {
   pkgdb :: Bool                      -- Include the "--package-db" flag
  ,prefix :: Bool                     -- Include the "--prefix" flag
+ ,setup :: Bool                      -- Use Setup.{hs|lhs} instead of cabal
 }
 
 cabalCommand :: CommandUI CabalFlags
 
 cabalCommand = CommandUI {
   commandName         = "cabal"
- ,commandSynopsis     = "Invoke the cabal-install program to run arbitrary " ++
+ ,commandSynopsis     = "Invoke the cabal-install or Setup.{hs|lhs} program to run arbitrary " ++
                         "action on private packages"
- ,commandUsage        = (++ " cabal -- <cabal command options>")
- ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
-                                         "cabal-install on the privately installed packages.\n" ++
-                                         "Use double-hyphen (--) before any cabal parameters " ++
-                                         "to avoid interpretation of them by " ++ pname ++ ".\n" ++
-                                         "If the cabal command complains about unrecognized " ++
-                                         "options `--package-db' or `--prefix'\n" ++
-                                         "use -D or -P options BEFORE the double hyphen " ++
-                                         "to omit them.\n\n"
- ,commandDefaultFlags = CabalFlags False False
+ ,commandUsage        = (++ " cabal -- <cabal or Setup command options>")
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to invoke arbitrary action of cabal-install on the privately\n" ++ 
+    "installed packages.  Use double-hyphen (--)  before any  cabal  parameters to\n" ++ 
+    "avoid interpretation of them by " ++ pname ++ ".\n" ++
+    "If the cabal command  complains about  unrecognized options `--package-db' or\n" ++ 
+    "`--prefix' use -D or -P options BEFORE the double hyphen to omit them. Use -S\n" ++
+    "option to run the package's  Setup.{hs|lhs}  installation  program instead of\n" ++
+    "cabal-install.\n\n"
+ ,commandDefaultFlags = CabalFlags False False False
  ,commandOptions = const [
     OptionField {
       optionName = "omit-package-db"
@@ -163,17 +226,22 @@ cabalCommand = CommandUI {
          ,("Omit the --prefix option for cabal commands that do not understand it"
             ,(['P'], ["omit-prefix"])
             ,(\flags -> flags {prefix = True})
+            ,prefix)
+         ,("Use the Setup.{hs|lhs} installation program instead of Cabal-install"
+            ,(['S'], ["setup"])
+            ,(\flags -> flags {setup = True})
             ,prefix)]
       ]
     }
  ]
 }
 
-cabalAction (CabalFlags pkgdb prefix) s g = do
+cabalAction (CabalFlags pkgdb prefix setup) s g = do
   cd <- getCurrentDirectory
   let dbopt = if pkgdb then [] else ["--package-db=" ++ (cd </> pkgdir)]
       pfxopt = if prefix then [] else ["--prefix=" ++ (cd </> instdir)]
-  (_, _, _, p) <- privateProcessRaw "cabal" (s ++ dbopt ++ pfxopt) >>= createProcess
+      (stp, prog) = if setup then (["Setup"], "runghc") else ([], "cabal")
+  (_, _, _, p) <- privateProcessRaw prog (stp ++ s ++ dbopt ++ pfxopt) >>= createProcess
   waitForProcess p
   return ()
 
@@ -185,10 +253,10 @@ ghcpkgCommand = CommandUI {
   commandName         = "ghc-pkg"
  ,commandSynopsis     = "Invoke the ghc-pkg program to run arbitrary action on private packages"
  ,commandUsage        = (++ " ghc-pkg -- <ghc-pkg command options>")
- ,commandDescription  = Just $ \pname -> "Use this command to invoke arbitrary action of " ++
-                                         "ghc-pkg on the privately installed packages.\n" ++
-                                         "Use double-hyphen (--) before any command parameters " ++
-                                         "to avoid interpretation of them by " ++ pname ++ ".\n\n"
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to invoke arbitrary action of ghc-pkg on the privately installed\n" ++
+    "packages.  Use  double-hyphen  (--)   before  any  ghc-pkg  parameters  to  avoid\n" ++
+    "interpretation of them by " ++ pname ++ ".\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -209,17 +277,14 @@ cloneCommand = CommandUI {
   commandName         = "clone"
  ,commandSynopsis     = "Clone package(s) installed publicly into the private packages database"
  ,commandUsage        = (++ " clone <package name> [...<package name>]")
- ,commandDescription  = Just $ \pname -> "Use this command to install previously compiled " ++
-                                         "package(s) from global \nor user database into the " ++
-                                         "private database via running ghc-pkg.\n" ++
-                                         "Package files (libraries, executables) will not be " ++
-                                         "copied; \njust the description of the " ++ 
-                                         "package will be transferred.\n" ++
-                                         "Note that the --force flag will not be " ++
-                                         "passed to ghc-pkg,\nso if any package dependencies " ++
-                                         "are missing, cloning will not be completed\n" ++
-                                         "It is a good idea to specify package " ++
-                                         "version explicitly.\n\n"
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to install previously  compiled package(s)  from  global or user\n" ++
+    "database into the private database via running ghc-pkg. Package files (libraries,\n" ++
+    "executables)  will not be copied;  just  the description  of the package  will be\n" ++ 
+    "transferred.\n" ++
+    "Note  that  the --force  flag will  not be  passed to ghc-pkg,  so if any package\n" ++
+    "dependencies  are missing,  cloning  will not be completed.  It is a good idea to\n" ++ 
+    "specify package version explicitly.\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -238,9 +303,9 @@ listCommand = CommandUI {
   commandName         = "list"
  ,commandSynopsis     = "List packages installed privately"
  ,commandUsage        = (++ " list")
- ,commandDescription  = Just $ \pname -> "Use this command to list packages installed " ++
-                                         "privately for this project.\n" ++ pname ++ " will " ++
-                                         "run the ghc-pkg utility to perform this action.\n\n"
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to list packages installed privately for this project.\n" ++ 
+    pname ++ " will run the ghc-pkg utility to perform this action.\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
@@ -261,11 +326,10 @@ bootstrapCommand = CommandUI {
   commandName         = "bootstrap"
  ,commandSynopsis     = "Bootstrap private packages configuration"
  ,commandUsage        = (++ " bootstrap")
- ,commandDescription  = Just $ \pname -> "Use this command to create an empty per-project " ++
-                                         "configuration of packages.\n" ++ pname ++ " will " ++
-                                         "clone the following packages into the per-project " ++
-                                         "packages directory: \n\n" ++
-                                         concat (intersperse " " bootpkgs) ++ ".\n\n"
+ ,commandDescription  = Just $ \pname -> 
+    "Use this command to create an empty per-project database of packages.\n" ++ 
+    pname ++ " will clone the following packages into the per-project packages directory: \n\n" ++
+    concat (intersperse " " bootpkgs) ++ ".\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
