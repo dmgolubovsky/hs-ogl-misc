@@ -79,7 +79,7 @@ capriGlobalCommand = CommandUI {
     commandDescription  = Just $ \pname ->
          "For more information about a command use\n"
       ++ "  " ++ pname ++ " COMMAND --help\n\n"
-      ++ "Typical steps for installing Cabal packages:\n"
+      ++ "Typical steps of building Haskell projects with Capri:\n"
       ++ concat [ "  " ++ pname ++ " " ++ x ++ "\n"
                 | x <- ["bootstrap", "clone", "configure", "build", "install"]],
     commandDefaultFlags = defaultGlobalFlags,
@@ -126,7 +126,7 @@ importCommand = CommandUI {
  ,commandDescription  = Just $ \pname -> 
     "Use this command to build another package with respect to this package private\n" ++
     "packages database. Use double-hyphen (--) before  any build program parameters\n" ++
-    "to avoid interpretation of them by " ++ pname ++ ".\n" ++
+    "to avoid interpretation of them by " ++ pname ++ " as its own options.\n" ++
     "If only import directory is specified,    \"cabal install\" will be executed  in\n" ++ 
     "that  directory.   If the build program complains about  unrecognized  options\n" ++ 
     "`--package-db' or `--prefix' use -D or -P options BEFORE the double hyphen  to\n" ++
@@ -208,7 +208,7 @@ cabalCommand = CommandUI {
  ,commandDescription  = Just $ \pname -> 
     "Use this command to invoke arbitrary action of cabal-install on the privately\n" ++ 
     "installed packages.  Use double-hyphen (--)  before any  cabal  parameters to\n" ++ 
-    "avoid interpretation of them by " ++ pname ++ ".\n" ++
+    "avoid interpretation of them by " ++ pname ++ " as its own options.\n" ++
     "If the cabal command  complains about  unrecognized options `--package-db' or\n" ++ 
     "`--prefix' use -D or -P options BEFORE the double hyphen to omit them. Use -S\n" ++
     "option to run the package's  Setup.{hs|lhs}  installation  program instead of\n" ++
@@ -256,7 +256,7 @@ ghcpkgCommand = CommandUI {
  ,commandDescription  = Just $ \pname -> 
     "Use this command to invoke arbitrary action of ghc-pkg on the privately installed\n" ++
     "packages.  Use  double-hyphen  (--)   before  any  ghc-pkg  parameters  to  avoid\n" ++
-    "interpretation of them by " ++ pname ++ ".\n\n"
+    "interpretation of them by " ++ pname ++ " as its own options.\n\n"
  ,commandDefaultFlags = ()
  ,commandOptions = const []
 }
