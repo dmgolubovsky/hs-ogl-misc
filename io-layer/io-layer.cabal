@@ -1,10 +1,12 @@
-name:           csp-handles 
+name:           io-layer 
 version:        0.1
 license:        BSD3
 maintainer:     golubovsky@gmail.com
-synopsis:       GHC IO Handles backed by stream processors
+synopsis:       IO Layer library with custom implementations of Handles, namespaces, etc.
 category:       graphics, user interface
 description:
+    This package implements an I/O layer base on new features of GHC runtime:
+    .
     New GHC runtime provides API to implement I/O Handles backed by arbitrary
     instances of GHC.IO.Device and GHC.IO.BufferedIO classes. This package
     provides such implementation of Handles backed by continuation-based

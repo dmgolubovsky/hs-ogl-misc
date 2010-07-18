@@ -73,40 +73,28 @@ instance CSPIO IOUnionDir where
   setsp = putMVar . dirSP
   bufsize = const 4096
 
-mkIOUnionDir :: UnionDir -> IO (GBReader IOUnionDir)
+mkIOUnionDir :: UnionDir -> IO (StreamReader IOUnionDir)
 
-mkIOUnionDir ud = initDirSP ud >>= newMVar >>= return . GBReader . IOUnionDir
+mkIOUnionDir ud = initDirSP ud >>= newMVar >>= return . StreamReader . IOUnionDir
 
 -- Stream processor for directory handle
 
 initDirSP (UnionDir ds) = do
   dirs <- mapM dirList (map dirfp $ DL.toList ds)
-  return $ ContAvail (readdir (concat dirs) [])
+  return $ ContReady (readdir (concat dirs))
 
-readdir :: [FilePath] -> [B.ByteString] -> ContSPFun
+readdir :: [FilePath] -> ContSPFun
 
 -- Both unget stack and directory contents are exhausted: EOF.
 
-readdir [] [] _ _ _ = return (0, ContEOF)
+readdir [] _ _ _ _ = return ContEOF
 
--- Unget stack is empty, but there is directory contents not read yet.
+-- There is directory contents not read yet.
 
-readdir (fp:fps) [] _ buf avl = do
+readdir (fp:fps) _ _ _ avl = do
   let fpnl = U.fromString (fp ++ "\n")
-  (nbt, mbrm) <- fillBuf fpnl buf avl
-  let ub' = case mbrm of
-        Nothing -> []
-        Just rm -> [rm]
-  return (nbt, ContAvail (readdir fps ub'))
+  return $ ContBuff fpnl (readdir fps)
 
--- Unget stack takes priority over directory contents.
-
-readdir fps (ub:ubs) _ buf avl = do
-  (nbt, mbrm) <- fillBuf ub buf avl
-  let ub' = case mbrm of
-        Nothing -> ubs
-        Just rm -> rm:ubs
-  return (nbt, ContAvail (readdir fps ub'))
     
 dirType _ = return Directory
 
