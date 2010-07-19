@@ -8,6 +8,7 @@ module Main where
 
 import GHC.IO.CSPHandle
 import qualified Data.DList as DL
+import System.IO9.NameSpace.Pure
 import System.FilePath
 import Control.Concurrent
 import GHC.IO.Device
@@ -32,29 +33,6 @@ main = do
   hGetContents h >>= putStrLn >> hFlush stdout
 
 -- =============================== Union Directory ============================= --
-
-instance (Show a) => Show (DL.DList a) where
-  show x = show (DL.toList x)
-
-data BoundDir = BoundDir {
-  dirfp :: FilePath
- ,dircr :: Bool} deriving (Show)
-
--- Imitate Plan9/Inferno directory binding: the boolean flag to allow
--- file creation in the directory.
-
-data BindFlag = BindBefore Bool | BindAfter Bool | BindRepl deriving (Show)
-
-data UnionDir = UnionDir (DL.DList BoundDir) deriving (Show, Typeable)
-
-unionDir :: FilePath -> UnionDir
-unionDir fp = UnionDir (DL.singleton BoundDir {dirfp = fp, dircr = True})
-
-bindDirAt :: UnionDir -> FilePath -> BindFlag -> UnionDir
-bindDirAt (UnionDir dl) fp bf = case bf of
-  BindRepl -> unionDir fp
-  BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirfp = fp, dircr = cr}) dl
-  BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirfp = fp, dircr = cr})
 
 -- Virtual "device" for a directory, accessible via handle
 
