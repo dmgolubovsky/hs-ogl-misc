@@ -17,12 +17,14 @@ module System.IO9.NameSpace.Pure (
   BoundDir (..)
  ,BindFlag (..)
  ,UnionDir (..)
- ,NsValue (..)
  ,DevEnt (..)
  ,NameSpace
  ,unionDir
  ,setGlobal
  ,getGlobal
+ ,addDevEntry
+ ,getDevEntry
+ ,newUnionPoint
  ,bindDirAt) where
 
 import Data.Char
@@ -81,13 +83,11 @@ bindDirAt (UnionDir dl) fp bf = case bf of
   BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirfp = fp, dircr = cr}) dl
   BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirfp = fp, dircr = cr})
 
--- | A datatype to represent a namespace key value.
+-- | A datatype to represent a namespace value.
 
 data NsValue = UnionPoint UnionDir      -- ^ A union point
-             | DeviceEntry Char DevEnt  -- ^ Device entry (host directory translation or 
+             | DeviceEntry DevEnt       -- ^ Device entry (host directory translation or 
                                         -- a virtual device serving its file system (TBD).
-                                        -- A character in the entry defines the kernel namespace
-                                        -- letter (X in #X).
              | GlobalSetting String     -- ^ A global setting (not to be confused 
                                         -- with process environment)
                deriving (Eq, Ord, Show)
@@ -101,27 +101,62 @@ data DevEnt = HostPath FilePath         -- ^ Host filesystem path. If such entry
           {-| DevTable ... - TBD -}
               deriving (Eq, Ord, Show)
 
+-- | A datattype to represent a namespace key.
 
--- | The namespace itself which is a map of strings to 'NsValue's. Namespace data is stored at
+data NsKey = NsPath FilePath            -- ^ File path of a union point as seen by threads
+           | NsGlobal String            -- ^ Global setting
+           | NsDevice Char              -- ^ Virtual device or host filesystem path
+           deriving (Eq, Ord, Show)
+
+-- | The namespace itself which is a map of 'NsKey's to 'NsValue's. Namespace data is stored at
 -- thread-level (may be shared between several threads) in a mutable reference, so impure
--- namespace functions just update those references as needed. Namespace keys start with '/' for
--- filesystem paths, with '#' for kernel device entries, with '$' for global settings.
+-- namespace functions just update those references as needed.
 
-type NameSpace = M.Map String NsValue
+type NameSpace = M.Map NsKey NsValue
 
 -- | Update a global setting. New value is created in the map, existing value is updated.
 -- Do not prepend a '$' to the setting name (will be added automatically).
 
 setGlobal :: NameSpace -> String -> String -> NameSpace
 
-setGlobal ns k v = M.insert ('$':k) (GlobalSetting v) ns
+setGlobal ns k v = M.insert (NsGlobal k) (GlobalSetting v) ns
 
 -- | Retrieve a global setting (its most recent value). Monadic failure occurs if there is no
 -- such setting. Do not prepend a '$' to the setting name.
 
 getGlobal :: (Monad m) => NameSpace -> String -> m String
 
-getGlobal ns k = case M.lookup ('$':k) ns of
+getGlobal ns k = case M.lookup (NsGlobal k) ns of
   Just (GlobalSetting s) -> return s
   _ -> fail $ "getGlobal: $" ++ k ++ " does not exist"
+
+
+-- | Add a virtual device or host path prefix. Entries for each letter can be added,
+-- but not replaced (operation fails if such entry already exists).
+
+addDevEntry :: (Monad m) => NameSpace -> Char -> DevEnt -> m NameSpace
+
+addDevEntry ns c d = case M.lookup (NsDevice c) ns of
+  Just _ -> fail $ "addDevEntry: #" ++ [c] ++ " already exists"
+  Nothing -> return $ M.insert (NsDevice c) (DeviceEntry d) ns
+
+-- | Look up a device entry by a letter. Monadic failure occurs if entry is not found.
+
+getDevEntry :: (Monad m) => NameSpace -> Char -> m DevEnt
+
+getDevEntry ns c = case M.lookup (NsDevice c) ns of
+  Just (DeviceEntry d) -> return d
+  _ -> fail $ "getDevEntry: #" ++ [c] ++ " does not exist"
+
+
+-- | Create a new union point in the namespace. An absolute file path has to be provided.
+-- Initially the union point will only contain itself. The operation fails if such
+-- union point already exists. The path is not checked for existance here.
+
+newUnionPoint :: (Monad m) => NameSpace -> FilePath -> m NameSpace
+
+newUnionPoint ns fp = case M.lookup (NsPath fp) ns of
+  Just _ -> fail $ "newUnionPoint: " ++ fp ++ " already exists"
+  Nothing | not (isAbsolute fp) -> fail $ "newUnionPoint: " ++ fp ++ "is not an absolute path"
+  Nothing -> return $ M.insert (NsPath fp) (UnionPoint $ unionDir fp) ns
 
