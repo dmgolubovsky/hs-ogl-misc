@@ -24,10 +24,12 @@ module System.IO9.NameSpace.Pure (
  ,getGlobal
  ,addDevEntry
  ,getDevEntry
- ,mount
+ ,bindAt
+ ,unmountAt
  ,bindDirAt) where
 
 import Data.Char
+import Data.List
 import System.FilePath
 import Control.Monad
 import qualified Data.DList as DL
@@ -156,17 +158,37 @@ getDevEntry ns c = case M.lookup (NsDevice c) ns of
 -- Note. Although the pure function does not check whether the mount point exists,
 -- this will be done by the IO part of the algorithm.
 
-mount :: (Monad m) => NameSpace -> FilePath -> FilePath -> BindFlag -> m NameSpace
+bindAt :: (Monad m) => NameSpace -> FilePath -> FilePath -> BindFlag -> m NameSpace
 
-mount ns fp fp2 bf | not (isAbsolute fp2) && not (isDevice fp2) = 
-  fail $ "mount: " ++ fp ++ "is not an absolute or a device path"
+bindAt ns fp fp2 bf | not (isAbsolute fp2) && not (isDevice fp2) = 
+  fail $ "mount: " ++ fp ++ " is not an absolute or a device path"
 
-mount ns fp fp2 bf = let mbup = M.lookup (NsPath fp) ns in
+bindAt ns fp fp2 bf = let mbup = M.lookup (NsPath fp) ns in
   case mbup of
     Nothing -> 
       return $ M.insert (NsPath fp) (UnionPoint $ bindDirAt (unionDir fp) fp2 bf) ns
     Just (UnionPoint up) -> 
       return $ M.adjust (const $ UnionPoint $ bindDirAt up fp2 bf) (NsPath fp) ns
+    _ -> fail $ "bindAt: union point " ++ fp ++ " does not exist"
+
+-- | Unmount a filepath at a union point. If an empty string is provided as the
+-- filepath to unmount, the union point is removed from the namespace completely.
+-- If some absolute or device filepath is provided, and it is indeed mounted at the
+-- union point, it is removed from the union. Otherwise monadic failure occurs.
+
+unmountAt :: (Monad m) => NameSpace -> FilePath -> FilePath -> m NameSpace
+
+unmountAt ns fp fp2 = let mbup = M.lookup (NsPath fp) ns in
+  case mbup of
+    Nothing -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
+    Just (UnionPoint (UnionDir ud)) ->
+      let bds = DL.toList ud
+          (b1, b2) = partition ((== fp2) . dirfp) bds
+      in  case b1 of
+            [] -> fail $ "unmountAt: " ++ fp2 ++ " was not mounted at " ++ fp
+            _ -> return $ M.adjust (const $ UnionPoint $ UnionDir $ DL.fromList b2) (NsPath fp) ns
+    _ -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
+
 
 -- Utility: is this a device path?
 
