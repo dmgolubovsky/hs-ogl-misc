@@ -24,7 +24,7 @@ module System.IO9.NameSpace.Pure (
  ,getGlobal
  ,addDevEntry
  ,getDevEntry
- ,newUnionPoint
+ ,mount
  ,bindDirAt) where
 
 import Data.Char
@@ -149,14 +149,28 @@ getDevEntry ns c = case M.lookup (NsDevice c) ns of
   _ -> fail $ "getDevEntry: #" ++ [c] ++ " does not exist"
 
 
--- | Create a new union point in the namespace. An absolute file path has to be provided.
--- Initially the union point will only contain itself. The operation fails if such
--- union point already exists. The path is not checked for existance here.
+-- | Mount a filepath at a union point. An absolute file path has to be provided.
+-- If the union point does not exist in the namespace given, it will be created
+-- and will consist of the original directory and the mounted file or directory. 
+-- If it does exist, the new path will be added to the union according to the flags.
+-- Note. Although the pure function does not check whether the mount point exists,
+-- this will be done by the IO part of the algorithm.
 
-newUnionPoint :: (Monad m) => NameSpace -> FilePath -> m NameSpace
+mount :: (Monad m) => NameSpace -> FilePath -> FilePath -> BindFlag -> m NameSpace
 
-newUnionPoint ns fp = case M.lookup (NsPath fp) ns of
-  Just _ -> fail $ "newUnionPoint: " ++ fp ++ " already exists"
-  Nothing | not (isAbsolute fp) -> fail $ "newUnionPoint: " ++ fp ++ "is not an absolute path"
-  Nothing -> return $ M.insert (NsPath fp) (UnionPoint $ unionDir fp) ns
+mount ns fp fp2 bf | not (isAbsolute fp2) && not (isDevice fp2) = 
+  fail $ "mount: " ++ fp ++ "is not an absolute or a device path"
+
+mount ns fp fp2 bf = let mbup = M.lookup (NsPath fp) ns in
+  case mbup of
+    Nothing -> 
+      return $ M.insert (NsPath fp) (UnionPoint $ bindDirAt (unionDir fp) fp2 bf) ns
+    Just (UnionPoint up) -> 
+      return $ M.adjust (const $ UnionPoint $ bindDirAt up fp2 bf) (NsPath fp) ns
+
+-- Utility: is this a device path?
+
+isDevice :: FilePath -> Bool
+isDevice ('#':_) = True
+isDevice _ = False
 
