@@ -160,8 +160,10 @@ getDevEntry ns c = case M.lookup (NsDevice c) ns of
 
 bindAt :: (Monad m) => NameSpace -> FilePath -> FilePath -> BindFlag -> m NameSpace
 
-bindAt ns fp fp2 bf | not (isAbsolute fp2) && not (isDevice fp2) = 
-  fail $ "mount: " ++ fp ++ " is not an absolute or a device path"
+bindAt ns fp fp2 bf | (not (isAbsolute fp2) && not (isDevice fp2)) || (not (isAbsolute fp)) = 
+  fail $ "mount: " ++ fp2 ++ " is not an absolute or a device path"
+
+bindAt ns fp fp2 bf | fp == fp2 = return ns
 
 bindAt ns fp fp2 bf = let mbup = M.lookup (NsPath fp) ns in
   case mbup of
@@ -186,7 +188,7 @@ unmountAt ns fp fp2 = let mbup = M.lookup (NsPath fp) ns in
           (b1, b2) = partition ((== fp2) . dirfp) bds
       in  case b1 of
             [] -> fail $ "unmountAt: " ++ fp2 ++ " was not mounted at " ++ fp
-            _ -> return $ M.adjust (const $ UnionPoint $ UnionDir $ DL.fromList b2) (NsPath fp) ns
+            _ -> return $ M.adjust (const . UnionPoint . UnionDir $ DL.fromList b2) (NsPath fp) ns
     _ -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
 
 
