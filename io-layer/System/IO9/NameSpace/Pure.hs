@@ -19,6 +19,7 @@ module System.IO9.NameSpace.Pure (
  ,UnionDir (..)
  ,DevEnt (..)
  ,NameSpace
+ ,newNameSpace
  ,unionDir
  ,setGlobal
  ,getGlobal
@@ -30,6 +31,7 @@ module System.IO9.NameSpace.Pure (
 
 import Data.Char
 import Data.List
+import Data.Maybe
 import System.FilePath
 import Control.Monad
 import qualified Data.DList as DL
@@ -116,6 +118,12 @@ data NsKey = NsPath FilePath            -- ^ File path of a union point as seen 
 
 type NameSpace = M.Map NsKey NsValue
 
+-- | Create a new empty namespace.
+
+newNameSpace :: NameSpace
+
+newNameSpace = M.empty
+
 -- | Update a global setting. New value is created in the map, existing value is updated.
 -- Do not prepend a '$' to the setting name (will be added automatically).
 
@@ -126,9 +134,9 @@ setGlobal ns k v = M.insert (NsGlobal k) (GlobalSetting v) ns
 -- | Retrieve a global setting (its most recent value). Monadic failure occurs if there is no
 -- such setting. Do not prepend a '$' to the setting name.
 
-getGlobal :: (Monad m) => NameSpace -> String -> m String
+getGlobal :: (Monad m) => String -> NameSpace -> m String
 
-getGlobal ns k = case M.lookup (NsGlobal k) ns of
+getGlobal k ns = case M.lookup (NsGlobal k) ns of
   Just (GlobalSetting s) -> return s
   _ -> fail $ "getGlobal: $" ++ k ++ " does not exist"
 
@@ -136,17 +144,17 @@ getGlobal ns k = case M.lookup (NsGlobal k) ns of
 -- | Add a virtual device or host path prefix. Entries for each letter can be added,
 -- but not replaced (operation fails if such entry already exists).
 
-addDevEntry :: (Monad m) => NameSpace -> Char -> DevEnt -> m NameSpace
+addDevEntry :: (Monad m) => Char -> DevEnt -> NameSpace -> m NameSpace
 
-addDevEntry ns c d = case M.lookup (NsDevice c) ns of
+addDevEntry c d ns = case M.lookup (NsDevice c) ns of
   Just _ -> fail $ "addDevEntry: #" ++ [c] ++ " already exists"
   Nothing -> return $ M.insert (NsDevice c) (DeviceEntry d) ns
 
 -- | Look up a device entry by a letter. Monadic failure occurs if entry is not found.
 
-getDevEntry :: (Monad m) => NameSpace -> Char -> m DevEnt
+getDevEntry :: (Monad m) => Char -> NameSpace -> m DevEnt
 
-getDevEntry ns c = case M.lookup (NsDevice c) ns of
+getDevEntry c ns = case M.lookup (NsDevice c) ns of
   Just (DeviceEntry d) -> return d
   _ -> fail $ "getDevEntry: #" ++ [c] ++ " does not exist"
 
@@ -156,31 +164,41 @@ getDevEntry ns c = case M.lookup (NsDevice c) ns of
 -- and will consist of the original directory and the mounted file or directory. 
 -- If it does exist, the new path will be added to the union according to the flags.
 -- Note. Although the pure function does not check whether the mount point exists,
--- this will be done by the IO part of the algorithm.
+-- this will be done by the IO part of the algorithm. It however checks if a device
+-- entry exists if the path starts with '#'
 
-bindAt :: (Monad m) => NameSpace -> FilePath -> FilePath -> BindFlag -> m NameSpace
+bindAt :: (Monad m) => FilePath -> FilePath -> BindFlag -> NameSpace -> m NameSpace
 
-bindAt ns fp fp2 bf | (not (isAbsolute fp2) && not (isDevice fp2)) || (not (isAbsolute fp)) = 
+bindAt fp fp2 bf ns | null fp2 || 
+                      (not (isAbsolute fp2) && not (isDevice fp2)) || 
+                      (not (isAbsolute fp)) = 
   fail $ "mount: " ++ fp2 ++ " is not an absolute or a device path"
 
-bindAt ns fp fp2 bf | fp == fp2 = return ns
+bindAt fp fp2 bf ns | fp == fp2 = return ns
 
-bindAt ns fp fp2 bf = let mbup = M.lookup (NsPath fp) ns in
-  case mbup of
-    Nothing -> 
-      return $ M.insert (NsPath fp) (UnionPoint $ bindDirAt (unionDir fp) fp2 bf) ns
-    Just (UnionPoint up) -> 
-      return $ M.adjust (const $ UnionPoint $ bindDirAt up fp2 bf) (NsPath fp) ns
-    _ -> fail $ "bindAt: union point " ++ fp ++ " does not exist"
+bindAt fp fp2 bf ns = do
+  let pthval = case isDevice fp2 of
+        True -> isJust . getDevEntry (deviceOf fp2) $ ns
+        False -> True
+  case pthval of
+    False -> fail $ "bindAt: device entry " ++ [deviceOf fp2] ++ " invalid"
+    True -> do
+      let mbup = M.lookup (NsPath fp) ns
+      case mbup of
+        Nothing -> 
+          return $ M.insert (NsPath fp) (UnionPoint $ bindDirAt (unionDir fp) fp2 bf) ns
+        Just (UnionPoint up) -> 
+          return $ M.adjust (const $ UnionPoint $ bindDirAt up fp2 bf) (NsPath fp) ns
+        _ -> fail $ "bindAt: union point " ++ fp ++ " does not exist"
 
 -- | Unmount a filepath at a union point. If an empty string is provided as the
 -- filepath to unmount, the union point is removed from the namespace completely.
 -- If some absolute or device filepath is provided, and it is indeed mounted at the
 -- union point, it is removed from the union. Otherwise monadic failure occurs.
 
-unmountAt :: (Monad m) => NameSpace -> FilePath -> FilePath -> m NameSpace
+unmountAt :: (Monad m) => FilePath -> FilePath -> NameSpace -> m NameSpace
 
-unmountAt ns fp fp2 = let mbup = M.lookup (NsPath fp) ns in
+unmountAt fp fp2 ns = let mbup = M.lookup (NsPath fp) ns in
   case mbup of
     Nothing -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
     Just (UnionPoint (UnionDir ud)) ->
@@ -191,10 +209,12 @@ unmountAt ns fp fp2 = let mbup = M.lookup (NsPath fp) ns in
             _ -> return $ M.adjust (const . UnionPoint . UnionDir $ DL.fromList b2) (NsPath fp) ns
     _ -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
 
-
 -- Utility: is this a device path?
 
 isDevice :: FilePath -> Bool
 isDevice ('#':_) = True
 isDevice _ = False
+
+deviceOf ('#':d:_) = d
+deviceOf _ = chr 0
 

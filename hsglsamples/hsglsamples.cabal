@@ -30,3 +30,7 @@ extra-libraries: GL, GLU, Xrandr
 executable:     uniondir
 main-is:        uniondir.hs
 extra-libraries: GL, GLU, Xrandr
+
+executable:     nsexample
+main-is:        nsexample.hs
+
