@@ -17,7 +17,6 @@ module System.IO9.NameSpace.Pure (
   BoundDir (..)
  ,BindFlag (..)
  ,UnionDir (..)
- ,DevEnt (..)
  ,NameSpace
  ,newNameSpace
  ,unionDir
@@ -27,12 +26,15 @@ module System.IO9.NameSpace.Pure (
  ,getDevEntry
  ,bindAt
  ,unmountAt
+ ,isDevice
+ ,deviceOf
  ,bindDirAt) where
 
 import Data.Char
 import Data.List
 import Data.Maybe
 import System.FilePath
+import System.IO9.Device
 import Control.Monad
 import qualified Data.DList as DL
 import qualified Data.Map as M
@@ -90,20 +92,11 @@ bindDirAt (UnionDir dl) fp bf = case bf of
 -- | A datatype to represent a namespace value.
 
 data NsValue = UnionPoint UnionDir      -- ^ A union point
-             | DeviceEntry DevEnt       -- ^ Device entry (host directory translation or 
-                                        -- a virtual device serving its file system (TBD).
+             | DeviceEntry Device9P     -- ^ Device entry: a function taking 9P2000 requests
+                                        -- and returning 9p2000 responses with continuation
              | GlobalSetting String     -- ^ A global setting (not to be confused 
                                         -- with process environment)
                deriving (Eq, Ord, Show)
-
--- | Device entry. Two types of "devices" are recognized: host filesystem prefix translation,
--- and a virtual device exporting its own file system (TBD).
-
-data DevEnt = HostPath FilePath         -- ^ Host filesystem path. If such entry is encountered
-                                        -- during a path evaluation, it is prefixed to the
-                                        -- evaluation result, and evaluation continues.
-          {-| DevTable ... - TBD -}
-              deriving (Eq, Ord, Show)
 
 -- | A datattype to represent a namespace key.
 
@@ -138,25 +131,25 @@ getGlobal :: (Monad m) => String -> NameSpace -> m String
 
 getGlobal k ns = case M.lookup (NsGlobal k) ns of
   Just (GlobalSetting s) -> return s
-  _ -> fail $ "getGlobal: $" ++ k ++ " does not exist"
+  _ -> fail $ "$" ++ k ++ " does not exist"
 
 
 -- | Add a virtual device or host path prefix. Entries for each letter can be added,
 -- but not replaced (operation fails if such entry already exists).
 
-addDevEntry :: (Monad m) => Char -> DevEnt -> NameSpace -> m NameSpace
+addDevEntry :: (Monad m) => Char -> Device9P -> NameSpace -> m NameSpace
 
 addDevEntry c d ns = case M.lookup (NsDevice c) ns of
-  Just _ -> fail $ "addDevEntry: #" ++ [c] ++ " already exists"
+  Just _ -> fail $ "#" ++ [c] ++ " already exists"
   Nothing -> return $ M.insert (NsDevice c) (DeviceEntry d) ns
 
 -- | Look up a device entry by a letter. Monadic failure occurs if entry is not found.
 
-getDevEntry :: (Monad m) => Char -> NameSpace -> m DevEnt
+getDevEntry :: (Monad m) => Char -> NameSpace -> m Device9P
 
 getDevEntry c ns = case M.lookup (NsDevice c) ns of
   Just (DeviceEntry d) -> return d
-  _ -> fail $ "getDevEntry: #" ++ [c] ++ " does not exist"
+  _ -> fail $ "#" ++ [c] ++ " does not exist"
 
 
 -- | Mount a filepath at a union point. An absolute file path has to be provided.
@@ -172,7 +165,7 @@ bindAt :: (Monad m) => FilePath -> FilePath -> BindFlag -> NameSpace -> m NameSp
 bindAt fp fp2 bf ns | null fp2 || 
                       (not (isAbsolute fp2) && not (isDevice fp2)) || 
                       (not (isAbsolute fp)) = 
-  fail $ "mount: " ++ fp2 ++ " is not an absolute or a device path"
+  fail $ fp2 ++ " is not an absolute or a device path"
 
 bindAt fp fp2 bf ns | fp == fp2 = return ns
 
@@ -181,7 +174,7 @@ bindAt fp fp2 bf ns = do
         True -> isJust . getDevEntry (deviceOf fp2) $ ns
         False -> True
   case pthval of
-    False -> fail $ "bindAt: device entry " ++ [deviceOf fp2] ++ " invalid"
+    False -> fail $ "device entry " ++ [deviceOf fp2] ++ " invalid"
     True -> do
       let mbup = M.lookup (NsPath fp) ns
       case mbup of
@@ -189,7 +182,7 @@ bindAt fp fp2 bf ns = do
           return $ M.insert (NsPath fp) (UnionPoint $ bindDirAt (unionDir fp) fp2 bf) ns
         Just (UnionPoint up) -> 
           return $ M.adjust (const $ UnionPoint $ bindDirAt up fp2 bf) (NsPath fp) ns
-        _ -> fail $ "bindAt: union point " ++ fp ++ " does not exist"
+        _ -> fail $ "union point " ++ fp ++ " does not exist"
 
 -- | Unmount a filepath at a union point. If an empty string is provided as the
 -- filepath to unmount, the union point is removed from the namespace completely.
@@ -200,20 +193,24 @@ unmountAt :: (Monad m) => FilePath -> FilePath -> NameSpace -> m NameSpace
 
 unmountAt fp fp2 ns = let mbup = M.lookup (NsPath fp) ns in
   case mbup of
-    Nothing -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
+    Nothing -> fail $ "union point " ++ fp ++ " does not exist"
+    Just _ | null fp2 -> return $ M.delete (NsPath fp) ns
     Just (UnionPoint (UnionDir ud)) ->
       let bds = DL.toList ud
           (b1, b2) = partition ((== fp2) . dirfp) bds
       in  case b1 of
-            [] -> fail $ "unmountAt: " ++ fp2 ++ " was not mounted at " ++ fp
+            [] -> fail $ fp2 ++ " was not mounted at " ++ fp
             _ -> return $ M.adjust (const . UnionPoint . UnionDir $ DL.fromList b2) (NsPath fp) ns
-    _ -> fail $ "unmountAt: union point " ++ fp ++ " does not exist"
+    _ -> fail $ "union point " ++ fp ++ " does not exist"
 
--- Utility: is this a device path?
+-- | Return 'True' is the given path is a device path (starts with #).
 
 isDevice :: FilePath -> Bool
 isDevice ('#':_) = True
 isDevice _ = False
+
+-- | Extract the device letter (if any) from the path. If this is not a device path,
+-- the 0 character is returned.
 
 deviceOf ('#':d:_) = d
 deviceOf _ = chr 0

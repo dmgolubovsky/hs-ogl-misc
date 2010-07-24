@@ -14,7 +14,8 @@
 ------------------------------------------------------------------
 
 module System.IO9.NameSpace.IO (
-  addHostPrefix
+  mountAt
+ ,EvalResult (..)
 ) where
 
 import Data.Char
@@ -23,15 +24,30 @@ import System.FilePath
 import System.Directory
 import System.IO9.NameSpace.Pure
 
--- | Add a host prefix to the given namespace. The directory provided must exist.
--- The character provided names the kernel table entry associated with this
--- prefix. The function fails if any error occurs.
 
-addHostPrefix :: FilePath -> Char -> NameSpace -> IO NameSpace
+-- | Mount a directory or a file at the given location. This is an impure version of
+-- 'bindAt' also checking for validity of the path being mounted.
 
-addHostPrefix fp c ns = do
-  cfp <- canonicalizePath fp
-  ex <- doesDirectoryExist cfp
-  when (not ex) . fail $ "addHostPrefix: directory " ++ fp ++ " does not exist"
-  addDevEntry c (HostPath cfp) ns
+mountAt :: FilePath                       -- ^ Mount point ("old")
+        -> FilePath                       -- ^ File or directory to mount/add to union ("new")
+        -> BindFlag                       -- ^ Bind flags (before, after, allow creation, etc.)
+        -> NameSpace                      -- ^ Current namespace
+        -> IO NameSpace                   -- ^ Modified namespace
+
+mountAt fp fp2 flg ns = do
+  cfp2 <- canonicalizePath fp2
+  ex <- doesDirectoryExist cfp2 -- NB must be evaluation of the file path through namespace !!!
+  when (not ex && not (isDevice fp2)) . fail $ "directory " ++ fp2 ++ " does not exist"
+  bindAt fp cfp2 flg ns
+
+-- | A datatype to hold the result of file path evaluation.
+
+data EvalResult = EvalOK FilePath FilePath -- ^ Evaluation was successful, holds the final path
+                                           -- prefix and the last component
+                | EvalProgress FilePath FilePath -- ^ Evaluation in progress, holds the remainder
+                                           -- of the path being evaluated, and the prefix of the
+                                           -- partial result
+                | EvalError String         -- evaluation error, holds the error message 
+
+
 
