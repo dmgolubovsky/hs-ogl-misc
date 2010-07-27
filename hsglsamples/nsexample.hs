@@ -18,7 +18,7 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   createDirectoryIfMissing True rootdir
-  root <- devPosix rootdir
+  root <- devPosix True rootdir
   ns <- return newNameSpace >>= 
         addDevEntry 'Z' root
   mapM (putStrLn . show) (M.toList ns)
