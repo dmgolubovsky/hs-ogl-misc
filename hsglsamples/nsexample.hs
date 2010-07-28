@@ -26,5 +26,7 @@ main = do
   putStrLn $ show resp
   resp1 <- re_cont resp $ Msg TTattach 1 (Tattach 0 0 "" dir)
   putStrLn $ show resp1
+  resp2 <- re_cont resp1 $ Msg TTstat 2 (Tstat 0)
+  putStrLn $ show resp2
 
   

@@ -19,6 +19,7 @@ module System.IO9.Devices.DevPosix (
 
 import Data.Word
 import Data.Bits
+import Data.Maybe
 import System.FilePath
 import System.Directory
 import System.IO9.Device
@@ -81,6 +82,8 @@ dpvers devd msg = return $ Resp9P (errorMsg (msg_tag msg) $
 -- a regular file. If aname points to a non-existent file or directory, the operation
 -- fails, but the device remains in negotiated state.
 
+dpauth :: DevPosix -> Device9P
+
 dpauth devd msg@(Msg TTattach tg ta@Tattach {}) = do
   let norm = normalise (hfp devd ++ tat_aname ta)
   tree <- canonicalizePath norm 
@@ -92,14 +95,7 @@ dpauth devd msg@(Msg TTattach tg ta@Tattach {}) = do
     True -> do
       let fidmap' = M.insert (tat_fid ta) tree (fidmap devd)
       stat <- getFileStatus tree
-      let isdir = isDirectory stat
-          inode = fileID stat
-          ctime = modificationTime stat
-          qid = Qid {
-            qid_typ = if isdir then fromIntegral c_QTDIR else 0
-           ,qid_vers = round(realToFrac ctime)
-           ,qid_path = fromIntegral inode
-          }
+      let qid = stat2qid stat
       tid <- myThreadId
       return $ Resp9P (Msg TRattach tg (Rattach qid)) 
                       (dpacc devd { 
@@ -116,14 +112,24 @@ dpauth devd msg = return $ Resp9P (errorMsg (msg_tag msg) $ "Not authenticated")
 -- is True, thread ID is not checked, and any thread may reuse the authenticated connection.
 -- If it is False, and a request comes from the thread other authenticated thread, a fresh
 -- unnegotiated device is returned. Messages like Version and Auth are not accepted at this point.
+-- They will return a unnegotiated or unauthenticated device respectively.
 -- The Flush message has no action as all operations are synchronous.
 
-dpacc devd msg | msg_typ msg == TTversion || msg_typ msg == TTauth =
-  return $ Resp9P (errorMsg (msg_tag msg) $ "Message unexpected: connection reset") 
-                  (dpvers $ newdata (devshr devd) (hfp devd))
+dpacc :: DevPosix -> Device9P
+
+dpacc devd msg | msg_typ msg == TTversion = dpvers (newdata (devshr devd) (hfp devd)) msg
+
+dpacc devd msg | msg_typ msg == TTauth = dpauth (newdata (devshr devd) (hfp devd)) msg
  
 dpacc devd msg | msg_typ msg == TTflush = 
   return $ Resp9P (msg {msg_typ = TRflush, msg_body = Rflush}) (dpacc devd) 
+
+dpacc devd msg = do
+  tid <- myThreadId
+  if (devshr devd) && isJust (thrid devd) && (tid /= fromJust (thrid devd)) 
+    then dpvers (newdata (devshr devd) (hfp devd)) msg
+    else devError "got here..." msg
+    
 
 -- Check that the path2 is a subdirectory of path1 (or equal to path1).
 
@@ -137,3 +143,20 @@ isSubdir p1 p2 =
 issub [] _ = True
 
 issub (p1:p1s) (p2:p2s) = p1 == p2 && issub p1s p2s
+
+-- Build a Qid from file status.
+
+stat2qid :: FileStatus -> Qid
+
+stat2qid stat =
+  let isdir = isDirectory stat
+      inode = fileID stat
+      ctime = modificationTime stat
+      qid = Qid {
+        qid_typ = if isdir then fromIntegral c_QTDIR else 0
+       ,qid_vers = round(realToFrac ctime)
+       ,qid_path = fromIntegral inode
+      }
+  in  qid
+
+
