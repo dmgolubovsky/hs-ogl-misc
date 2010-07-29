@@ -42,6 +42,14 @@ module System.IO9.Device (
  ,c_QTMOUNT
  ,c_QTSYMLINK
  ,c_QTTMP
+ ,c_OREAD
+ ,c_OWRITE
+ ,c_ORDWR
+ ,c_OEXEC
+ ,c_OTRUNC
+ ,c_OCEXEC
+ ,c_ORCLOSE
+ ,c_OEXCL
 ) where
 
 import Data.Word
@@ -119,6 +127,13 @@ c_QTFILE = 0
 c_QTMOUNT = 16
 c_QTSYMLINK = 2
 c_QTTMP = 4
-
+c_OREAD = 0
+c_OWRITE = 1
+c_ORDWR = 2
+c_OEXEC = 3
+c_OTRUNC = 16
+c_OCEXEC = 32
+c_ORCLOSE = 64
+c_OEXCL	= 0x1000
 
 

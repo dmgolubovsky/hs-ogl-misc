@@ -25,6 +25,7 @@ import System.Directory
 import System.IO9.Device
 import System.Posix.Files
 import System.Posix.User
+import Control.Monad
 import Control.Concurrent
 import qualified Data.Map as M
 
@@ -49,6 +50,7 @@ devPosix shr fp = do
 data DevPosix = DevPosix {
   hfp :: FilePath                  -- root of the host file path
  ,fidmap :: M.Map Word32 FilePath  -- map of FIDs to actual paths
+ ,openmap :: M.Map Word32 Word8    -- map of FIDs currently open
  ,uname :: String                  -- name of the (authenticated) user
  ,thrid :: Maybe ThreadId          -- ID of the thread that attached
  ,devshr :: Bool                   -- Device connection can be shared
@@ -58,7 +60,7 @@ data DevPosix = DevPosix {
 
 newdata :: Bool -> FilePath -> DevPosix
 
-newdata shr fp = DevPosix fp M.empty "" Nothing shr
+newdata shr fp = DevPosix fp M.empty M.empty "" Nothing shr
 
 -- Process the "Version" message, then the "Auth" message. Any other
 -- sequence results in error.
@@ -129,8 +131,8 @@ dpacc devd msg = do
   tid <- myThreadId
   if (devshr devd) && isJust (thrid devd) && (tid /= fromJust (thrid devd)) 
     then dpvers (newdata (devshr devd) (hfp devd)) msg
-    else case msg_typ msg of
-      TTstat -> do                  -- if file/dir does not exist, return an empty list of stats
+    else case (msg_typ msg, msg_body msg) of
+      (TTstat, Tstat {}) -> do      -- if file/dir does not exist, return an empty list of stats
         let sfid = ts_fid $ msg_body msg
             spath = M.lookup sfid $ fidmap devd
         case spath of
@@ -141,27 +143,23 @@ dpacc devd msg = do
               False -> return $ Resp9P (msg {msg_typ = TRstat, msg_body = Rstat []}) (dpacc devd)
               True -> do
                 st <- getFileStatus sfp
-                funame <- getUserEntryForID (fileOwner st) >>= return . userName
-                fgroup <- getGroupEntryForID (fileGroup st) >>= return . groupName
-                let qid = stat2qid st
-                    mode = stat2mode st
-                    fname = if normalise (sfp ++ "/") == normalise (hfp devd ++ "/") 
+                let fname = if normalise (sfp ++ "/") == normalise (hfp devd ++ "/") 
                               then "/"
                               else head $ reverse $ splitPath sfp
-                    ret = Stat {
-                      st_typ = 0    -- these are not filled in by the driver, but
-                     ,st_dev = 0    -- rather by the surrounding framework
-                     ,st_qid = qid
-                     ,st_mode = mode
-                     ,st_atime = round $ realToFrac $ accessTime st
-                     ,st_mtime = round $ realToFrac $ modificationTime st
-                     ,st_length = fromIntegral $ fileSize st
-                     ,st_name = fname
-                     ,st_uid = funame
-                     ,st_gid = fgroup
-                     ,st_muid = funame
-                    }
+                ret <- stat2stat st fname
                 return $ Resp9P (msg {msg_typ = TRstat, msg_body = Rstat [ret]}) (dpacc devd)
+      (TTclunk, Tclunk {}) -> do
+        let clfid = tcl_fid $ msg_body msg
+            clmode = M.lookup clfid $ openmap devd
+            clpath = M.lookup clfid $ fidmap devd
+            rm = case clmode of
+              Nothing -> False
+              Just m -> (fromIntegral m .&. c_ORCLOSE) /= 0
+            openmap' = M.delete clfid $ openmap devd
+            fidmap' = M.delete clfid $ fidmap devd
+            devd' = devd {openmap = openmap', fidmap = fidmap'}
+        when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
+        return $ Resp9P (msg {msg_typ = TRclunk, msg_body = Rclunk}) (dpacc devd')
       _ -> emsg $ "Incorrect message " ++ show msg
 
     
@@ -219,5 +217,26 @@ stat2mode st =
         _ -> acc .|. nmb
   in  fromIntegral nmode
 
+-- Convert a Unix stat record to 9P2000 stat record.
 
+stat2stat :: FileStatus -> FilePath -> IO Stat
 
+stat2stat st fname = do
+  funame <- getUserEntryForID (fileOwner st) >>= return . userName
+  fgroup <- getGroupEntryForID (fileGroup st) >>= return . groupName
+  let qid = stat2qid st
+      mode = stat2mode st
+      ret = Stat {
+        st_typ = 0    -- these are not filled in by the driver, but
+       ,st_dev = 0    -- rather by the surrounding framework
+       ,st_qid = qid
+       ,st_mode = mode
+       ,st_atime = round $ realToFrac $ accessTime st
+       ,st_mtime = round $ realToFrac $ modificationTime st
+       ,st_length = fromIntegral $ fileSize st
+       ,st_name = fname
+       ,st_uid = funame
+       ,st_gid = fgroup
+       ,st_muid = funame
+      }
+  return ret
