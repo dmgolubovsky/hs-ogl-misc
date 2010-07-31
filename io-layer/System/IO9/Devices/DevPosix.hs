@@ -132,15 +132,15 @@ dpacc devd msg = do
   if (devshr devd) && isJust (thrid devd) && (tid /= fromJust (thrid devd)) 
     then dpvers (newdata (devshr devd) (hfp devd)) msg
     else case (msg_typ msg, msg_body msg) of
-      (TTstat, Tstat {}) -> do      -- if file/dir does not exist, return an empty list of stats
+      (TTstat, Tstat {}) -> do      -- if file/dir does not exist, return an error message
         let sfid = ts_fid $ msg_body msg
             spath = M.lookup sfid $ fidmap devd
         case spath of
-          Nothing -> emsg $ "Incorrect fid " ++ show sfid
+          Nothing -> emsg $ "Incorrect fid: " ++ show sfid
           Just sfp -> do
             ex <- fileExist sfp     -- file could have disappeared
             case ex of
-              False -> return $ Resp9P (msg {msg_typ = TRstat, msg_body = Rstat []}) (dpacc devd)
+              False -> emsg $ "File/directory does not exist: " ++ sfp
               True -> do
                 st <- getFileStatus sfp
                 let fname = if normalise (sfp ++ "/") == normalise (hfp devd ++ "/") 
@@ -160,6 +160,21 @@ dpacc devd msg = do
             devd' = devd {openmap = openmap', fidmap = fidmap'}
         when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
         return $ Resp9P (msg {msg_typ = TRclunk, msg_body = Rclunk}) (dpacc devd')
+      (TTwalk, Twalk {}) -> do
+        let twfid = tw_fid $ msg_body msg
+            twnfid = tw_newfid $ msg_body msg
+            twnames = tw_wnames $ msg_body msg
+            twpath = M.lookup twfid $ fidmap devd
+            twex = isJust twpath
+            twopen = M.member twfid $ openmap devd
+            twnused = M.member twnfid $ fidmap devd
+            difffid = twfid /= twnfid
+        case (twex, twopen, twnused && difffid) of
+          (False, _, _) -> emsg $ "Fid is invalid: " ++ show twfid
+          (True, True, _) -> emsg $ "Fid is open: " ++ show twfid
+          (True, False, True) -> emsg $ "New fid " ++ show twnfid ++ " is in use"
+          (True, False, False) -> do
+            emsg $ "walking to " ++ show twnames
       _ -> emsg $ "Incorrect message " ++ show msg
 
     
