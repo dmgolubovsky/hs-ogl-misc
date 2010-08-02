@@ -19,6 +19,7 @@ module System.IO9.Devices.DevPosix (
 
 import Data.Word
 import Data.Bits
+import Data.List
 import Data.Maybe
 import System.FilePath
 import System.Directory
@@ -145,7 +146,7 @@ dpacc devd msg = do
                 st <- getFileStatus sfp
                 let fname = if normalise (sfp ++ "/") == normalise (hfp devd ++ "/") 
                               then "/"
-                              else head $ reverse $ splitPath sfp
+                              else head . reverse $ splitPath sfp
                 ret <- stat2stat st fname
                 return $ Resp9P (msg {msg_typ = TRstat, msg_body = Rstat [ret]}) (dpacc devd)
       (TTclunk, Tclunk {}) -> do
@@ -174,10 +175,33 @@ dpacc devd msg = do
           (True, True, _) -> emsg $ "Fid is open: " ++ show twfid
           (True, False, True) -> emsg $ "New fid " ++ show twnfid ++ " is in use"
           (True, False, False) -> do
-            emsg $ "walking to " ++ show twnames
+            res <- walk (hfp devd) (fromJust twpath) twnames []
+            putStrLn . show $ length twnames
+            putStrLn . show $ length res
+            emsg $ "walked " ++ show res
       _ -> emsg $ "Incorrect message " ++ show msg
 
-    
+
+-- Walk the given path from the base step by step.
+
+walk :: FilePath -> FilePath -> [FilePath] -> [Qid] -> IO [Qid]
+
+walk root base fps fpqs = do
+  nbase <- canonicalizePath base
+  putStrLn nbase
+  ex <- fileExist nbase
+  case ex && isSubdir root nbase of
+    False -> return fpqs
+    True -> do
+      stat <- getFileStatus nbase
+      let qid = stat2qid stat
+          ret = fpqs ++ [qid]
+      case fps of
+        [] -> return ret
+        fph:fpt -> walk root (nbase </> fph) fpt ret
+      
+      
+  
 
 -- Check that the path2 is a subdirectory of path1 (or equal to path1).
 
@@ -186,11 +210,7 @@ isSubdir p1 p2 | equalFilePath p1 p2 = True
 isSubdir p1 p2 =
   let sp1 = splitPath p1
       sp2 = splitPath p2
-  in  issub p1 p2
-
-issub [] _ = True
-
-issub (p1:p1s) (p2:p2s) = p1 == p2 && issub p1s p2s
+  in  p1 `isPrefixOf` p2
 
 -- Build a Qid from file status.
 
