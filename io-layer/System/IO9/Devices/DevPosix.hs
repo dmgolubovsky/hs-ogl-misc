@@ -170,35 +170,42 @@ dpacc devd msg = do
             twopen = M.member twfid $ openmap devd
             twnused = M.member twnfid $ fidmap devd
             difffid = twfid /= twnfid
+            rwalk q d = return $ Resp9P (msg {msg_typ = TRwalk, msg_body = Rwalk q}) (dpacc d)
         case (twex, twopen, twnused && difffid) of
           (False, _, _) -> emsg $ "Fid is invalid: " ++ show twfid
           (True, True, _) -> emsg $ "Fid is open: " ++ show twfid
           (True, False, True) -> emsg $ "New fid " ++ show twnfid ++ " is in use"
           (True, False, False) -> do
-            res <- walk (hfp devd) (fromJust twpath) twnames []
-            putStrLn . show $ length twnames
-            putStrLn . show $ length res
-            emsg $ "walked " ++ show res
+            (rpth, res) <- walk (hfp devd) (fromJust twpath) twnames []
+            let fidmap' = M.insert twnfid rpth (fidmap devd)
+            case (length twnames, length res) of
+              (0, 1) -> rwalk res (devd {fidmap = fidmap'})
+              (m, n) | n == m + 1 -> rwalk (tail res) (devd {fidmap = fidmap'})
+              _ -> rwalk (tail res) devd
+              
+              
       _ -> emsg $ "Incorrect message " ++ show msg
 
 
 -- Walk the given path from the base step by step.
 
-walk :: FilePath -> FilePath -> [FilePath] -> [Qid] -> IO [Qid]
+walk :: FilePath -> FilePath -> [FilePath] -> [Qid] -> IO (FilePath, [Qid])
 
 walk root base fps fpqs = do
   nbase <- canonicalizePath base
-  putStrLn nbase
   ex <- fileExist nbase
-  case ex && isSubdir root nbase of
-    False -> return fpqs
+  case ex of
+    False -> return ("", fpqs)
     True -> do
-      stat <- getFileStatus nbase
+      let nbase' = case isSubdir root nbase of
+            True -> nbase
+            False -> root
+      stat <- getFileStatus nbase'
       let qid = stat2qid stat
-          ret = fpqs ++ [qid]
+          nxt = fpqs ++ [qid]
       case fps of
-        [] -> return ret
-        fph:fpt -> walk root (nbase </> fph) fpt ret
+        [] -> return (nbase', nxt)
+        fph:fpt -> walk root (nbase' </> fph) fpt nxt
       
       
   
