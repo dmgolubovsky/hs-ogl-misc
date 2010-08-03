@@ -24,8 +24,10 @@ import Data.Maybe
 import System.FilePath
 import System.Directory
 import System.IO9.Device
+import System.Posix.Types
 import System.Posix.Files
 import System.Posix.User
+import System.Posix.IO
 import Control.Monad
 import Control.Concurrent
 import qualified Data.Map as M
@@ -49,12 +51,12 @@ devPosix shr fp = do
 -- Device internal data.
 
 data DevPosix = DevPosix {
-  hfp :: FilePath                  -- root of the host file path
- ,fidmap :: M.Map Word32 FilePath  -- map of FIDs to actual paths
- ,openmap :: M.Map Word32 Word8    -- map of FIDs currently open
- ,uname :: String                  -- name of the (authenticated) user
- ,thrid :: Maybe ThreadId          -- ID of the thread that attached
- ,devshr :: Bool                   -- Device connection can be shared
+  hfp :: FilePath                              -- root of the host file path
+ ,fidmap :: M.Map Word32 FilePath              -- map of FIDs to actual paths
+ ,openmap :: M.Map Word32 (Word8, Maybe Fd)    -- map of FIDs currently open
+ ,uname :: String                              -- name of the (authenticated) user
+ ,thrid :: Maybe ThreadId                      -- ID of the thread that attached
+ ,devshr :: Bool                               -- Device connection can be shared
 }
 
 -- Initialize device data.
@@ -153,12 +155,13 @@ dpacc devd msg = do
         let clfid = tcl_fid $ msg_body msg
             clmode = M.lookup clfid $ openmap devd
             clpath = M.lookup clfid $ fidmap devd
-            rm = case clmode of
-              Nothing -> False
-              Just m -> (fromIntegral m .&. c_ORCLOSE) /= 0
+            (rm, cl) = case clmode of
+              Nothing -> (False, False)
+              Just (m, mbfd) -> ((fromIntegral m .&. c_ORCLOSE) /= 0, isJust mbfd)
             openmap' = M.delete clfid $ openmap devd
             fidmap' = M.delete clfid $ fidmap devd
             devd' = devd {openmap = openmap', fidmap = fidmap'}
+        when cl $ closeFd (fromJust . snd . fromJust $ clmode)
         when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
         return $ Resp9P (msg {msg_typ = TRclunk, msg_body = Rclunk}) (dpacc devd')
       (TTwalk, Twalk {}) -> do
@@ -180,6 +183,7 @@ dpacc devd msg = do
             let fidmap' = M.insert twnfid rpth (fidmap devd)
             case (length twnames, length res) of
               (0, 1) -> rwalk res (devd {fidmap = fidmap'})
+              (_, 1) -> emsg "first path element cannot be walked"
               (m, n) | n == m + 1 -> rwalk (tail res) (devd {fidmap = fidmap'})
               _ -> rwalk (tail res) devd
               

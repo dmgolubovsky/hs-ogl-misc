@@ -21,7 +21,8 @@ main = do
   createDirectoryIfMissing True rootdir
   root <- devPosix True rootdir
   ns <- return newNameSpace >>= 
-        addDevEntry 'Z' root
+        addDevEntry 'Z' root >>=
+        bindAt "/" "#Z" BindRepl
   mapM (putStrLn . show) (M.toList ns)
   resp <- root $ Msg TTversion 0 (Tversion 2048 "9P2000")
   putStrLn $ show resp

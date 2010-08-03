@@ -120,9 +120,9 @@ newNameSpace = M.empty
 -- | Update a global setting. New value is created in the map, existing value is updated.
 -- Do not prepend a '$' to the setting name (will be added automatically).
 
-setGlobal :: NameSpace -> String -> String -> NameSpace
+setGlobal :: (Monad m) => String -> String -> NameSpace -> m NameSpace
 
-setGlobal ns k v = M.insert (NsGlobal k) (GlobalSetting v) ns
+setGlobal k v ns = return $ M.insert (NsGlobal k) (GlobalSetting v) ns
 
 -- | Retrieve a global setting (its most recent value). Monadic failure occurs if there is no
 -- such setting. Do not prepend a '$' to the setting name.

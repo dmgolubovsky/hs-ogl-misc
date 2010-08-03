@@ -16,6 +16,7 @@
 module System.IO9.NameSpace.IO (
   mountAt
  ,EvalResult (..)
+ ,evalPath
 ) where
 
 import Data.Char
@@ -44,10 +45,29 @@ mountAt fp fp2 flg ns = do
 
 data EvalResult = EvalOK FilePath FilePath -- ^ Evaluation was successful, holds the final path
                                            -- prefix and the last component
-                | EvalProgress FilePath FilePath -- ^ Evaluation in progress, holds the remainder
+                | EvalProgress [FilePath] [FilePath] -- ^ Evaluation in progress, holds the remainder
                                            -- of the path being evaluated, and the prefix of the
                                            -- partial result
                 | EvalError String         -- evaluation error, holds the error message 
 
+
+-- | Evaluate a filepath through the given namespace. The namespace has to have a root
+-- binding. The namespace remains unchanged.
+
+evalPath :: FilePath -> NameSpace -> IO EvalResult
+
+evalPath fp ns | isAbsolute fp || isDevice fp = evalpath ns Nothing $ EvalProgress (splitPath fp) []
+evalPath fp _ = return $ EvalError $ "file path to evaluate " ++ fp ++ 
+                                     " is neither absolute nor device"
+
+-- Actual evaluator (not exported).
+
+evalpath ns mbd (EvalProgress fpd fpr) | null fpd && null fpr = 
+  return $ EvalError "file path to evaluate is empty"
+
+-- evalpath ns mbd (EvalProgress (fpdh:fpdt) fpr) = do
+  
+
+evalpath _ _ e = return e
 
 
