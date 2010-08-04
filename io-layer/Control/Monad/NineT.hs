@@ -16,12 +16,15 @@
 module Control.Monad.NineT (
   Device
  ,device
+ ,freshdev
 ) where
 
 import System.IO9.Device hiding (get, put)
+import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.Error
+import Data.Char
 import qualified Data.IntMap as I
 import qualified Data.Map as M
 
@@ -44,6 +47,7 @@ data ThreadState = ThreadState {
                                         -- a new index is generated, and the device is
                                         -- referenced by that index through this map.
  ,thrEnv :: M.Map String String         -- Thread's own environment needed at this level.
+ ,devTab :: M.Map Char Device9P         -- Table of devices (by letter)
 
 }
 
@@ -51,6 +55,7 @@ data ThreadState = ThreadState {
 
 initState = ThreadState 0 
                         I.empty 
+                        M.empty
                         M.empty
 
 -- The transformer itself.
@@ -77,13 +82,37 @@ updDev di dev = do
   put s {devMap = dm'}
   return ()
 
--- | Open a device by sending it a Version message. If negotiation succeeds, 
--- update the devices map of the thread, otherwise fail.
+-- | Register a device by letter adding it into the device table.                  
+-- Fetching a device from the table always gives a fresh interface on which
+-- even the Version message was not tried.
 
-device :: Int                          -- ^ Protocol message size
-       -> String                       -- ^ Negotiated protocol version
-       -> Device9P                     -- ^ Driver entry point
-       -> NineT Device
+device :: Char                         -- ^ Device character       
+       -> IO Device9P                  -- ^ Driver creation function
+       -> NineT ()
+
+device dc di = do
+  s <- get
+  d <- liftIO di
+  let dt' = M.insert dc d (devTab s)
+  put s {devTab = dt'}
+  return ()
+
+-- | Find a device by letter. This function always returns a "fresh" instance of a device,
+-- just as it was registered by 'device'. The function fails if no device can be
+-- found by the letter provided.
+
+freshdev :: Char -> NineT Device
+
+freshdev dc = do
+  mbd <- get >>= return . M.lookup dc . devTab
+  case mbd of
+    Nothing -> fail $ "no device driver found by letter " ++ [dc]
+    Just dev -> do
+      di <- nextInt
+      updDev di dev
+      return $ Device di
+
+{-
 
 device size vers dev = do
   tag <- nextInt >>= return . fromIntegral
@@ -96,4 +125,4 @@ device size vers dev = do
       return $ Device dev
     z -> fail $ "invalid response from device to version msg: " ++ show z
 
-
+-}

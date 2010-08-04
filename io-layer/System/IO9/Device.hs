@@ -19,6 +19,7 @@ module System.IO9.Device (
  ,Device9P
  ,errorMsg
  ,devError
+ ,body2type
  ,c_DMAPPEND
  ,c_DMAUTH
  ,c_DMDEVICE
@@ -100,6 +101,27 @@ devError :: String -> Device9P
 devError err msg = do
   let errmsg = errorMsg (msg_tag msg) err
   return $ Resp9P errmsg (devError err)
+
+-- | Automatically find a message type value for message body type value.
+-- Works only for request messages.
+-- NB This function better belongs to the NineP package itself
+
+body2type :: VarMsg -> Tag
+
+body2type Tversion {} = TTversion
+body2type Tauth {} = TTauth
+body2type Tattach {} = TTattach
+body2type Tflush {} = TTflush
+body2type Twalk {} = TTwalk
+body2type Topen {} = TTopen
+body2type Tcreate {} = TTcreate
+body2type Tread {} = TTread
+body2type Twrite {} = TTwrite
+body2type Tclunk {} = TTclunk
+body2type Tremove {} = TTremove
+body2type Tstat {} = TTstat
+body2type Twstat {} = TTwstat
+body2type _ = XXX_TTerror
 
 -- Constants used in 9P2000 messages excange: obtained by running HSFFIG
 -- against the relevant portion of include/libc.h (from the Plan9 source tree).
