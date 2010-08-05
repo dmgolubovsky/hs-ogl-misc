@@ -18,6 +18,7 @@ module Control.Monad.NineT (
  ,device
  ,freshdev
  ,devmsg
+-- ,runMain
 ) where
 
 import System.IO9.Device hiding (get, put)
@@ -44,7 +45,7 @@ newtype Device = Device {devRef :: Int}
 data ThreadState = ThreadState {
   intGen :: Int                         -- Integer number incremental generator
                                         -- to use for tags, fids, device indices, etc.
- ,devMap :: I.IntMap Device9P           -- Device reference map. Each time a device is attached,
+ ,devMap :: I.IntMap (Device9P, Char)   -- Device reference map. Each time a device is attached,
                                         -- a new index is generated, and the device is
                                         -- referenced by that index through this map.
  ,thrEnv :: M.Map String String         -- Thread's own environment needed at this level.
@@ -73,15 +74,25 @@ nextInt = do
   put s {intGen = x}
   return x
 
+-- Utility: get device by device index.
+
+findDev :: Int -> NineT (Maybe (Device9P, Char))
+
+findDev di = get >>= return . I.lookup di . devMap
+
 -- Utility: update devices map with new state of a device by given index.
 
 updDev :: Int -> Device9P -> NineT ()
 
 updDev di dev = do
   s <- get
-  let dm' = I.insert di dev (devMap s)
-  put s {devMap = dm'}
-  return ()
+  mbd <- findDev di
+  case mbd of
+    Nothing -> fail "invalid device index"
+    Just (_, dc) -> do
+      let dm' = I.insert di (dev, dc) (devMap s)
+      put s {devMap = dm'}
+      return ()
 
 -- | Register a device by letter adding it into the device table.                  
 -- Fetching a device from the table always gives a fresh interface on which
@@ -110,7 +121,9 @@ freshdev dc = do
     Nothing -> fail $ "no device driver found by letter " ++ [dc]
     Just dev -> do
       di <- nextInt
-      updDev di dev
+      s <- get
+      let dm' = I.insert di (dev, dc) (devMap s)
+      put s {devMap = dm'}
       return $ Device di
 
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
@@ -125,10 +138,10 @@ devmsg (Device di) msgb = do
         msg_typ = body2type msgb
        ,msg_tag = tag
        ,msg_body = msgb}
-  mbd <- get >>= return . I.lookup di . devMap
+  mbd <- findDev di
   case mbd of
     Nothing -> fail "invalid device number"
-    Just d -> do
+    Just (d, _) -> do
       resp <- liftIO $ d msg
       updDev di $ re_cont resp
       let rspb = msg_body $ re_msg resp
