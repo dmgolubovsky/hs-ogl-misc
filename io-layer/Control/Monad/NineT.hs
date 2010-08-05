@@ -17,6 +17,7 @@ module Control.Monad.NineT (
   Device
  ,device
  ,freshdev
+ ,devmsg
 ) where
 
 import System.IO9.Device hiding (get, put)
@@ -112,17 +113,27 @@ freshdev dc = do
       updDev di dev
       return $ Device di
 
-{-
+-- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
+-- even when an error response is returned. In case of a error response, the function fails
+-- with the string provided with the error message. Otherwise response is returned.
 
-device size vers dev = do
+devmsg :: Device -> VarMsg -> NineT VarMsg
+
+devmsg (Device di) msgb = do
   tag <- nextInt >>= return . fromIntegral
-  resp <- liftIO $ dev $ Msg TTversion tag (Tversion (fromIntegral size) vers)
-  case re_msg resp of
-    Msg TRerror _ (Rerror err) -> fail err
-    Msg TRversion _ _ -> do
-      dev <- nextInt
-      updDev dev (re_cont resp)
-      return $ Device dev
-    z -> fail $ "invalid response from device to version msg: " ++ show z
+  let msg = Msg {
+        msg_typ = body2type msgb
+       ,msg_tag = tag
+       ,msg_body = msgb}
+  mbd <- get >>= return . I.lookup di . devMap
+  case mbd of
+    Nothing -> fail "invalid device number"
+    Just d -> do
+      resp <- liftIO $ d msg
+      updDev di $ re_cont resp
+      let rspb = msg_body $ re_msg resp
+      case rspb of
+        Rerror e -> fail e
+        _ -> return rspb
 
--}
+
