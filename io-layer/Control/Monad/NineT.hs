@@ -18,7 +18,7 @@ module Control.Monad.NineT (
  ,device
  ,freshdev
  ,devmsg
--- ,runMain
+ ,startup
 ) where
 
 import System.IO9.Device hiding (get, put)
@@ -149,4 +149,10 @@ devmsg (Device di) msgb = do
         Rerror e -> fail e
         _ -> return rspb
 
+-- | Run the "main" program. This is the only entry point into this monad visible
+-- from the outside. 
+
+startup :: NineT () -> IO ()
+
+startup = flip evalStateT initState
 
