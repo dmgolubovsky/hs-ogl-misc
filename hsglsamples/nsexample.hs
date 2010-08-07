@@ -6,7 +6,7 @@ import System.IO
 import System.FilePath
 import System.Directory
 import System.Environment
-import Control.Monad.NineT
+import Control.Monad.NineM
 import Control.Monad.Trans
 import System.IO9.Device
 import System.IO9.Devices.DevPosix
@@ -26,6 +26,7 @@ main = do
     liftIO . putStrLn $ show st
     wk <- devmsg d $ Twalk 0 1 (filter (/= "/") $ splitPath dir) 
     liftIO . putStrLn $ show wk
+    liftIO (hGetLine stdin) >>= liftIO . putStrLn
     return ()
 
 

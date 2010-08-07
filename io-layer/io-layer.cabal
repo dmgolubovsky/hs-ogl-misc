@@ -15,9 +15,9 @@ build-type:     Simple
 build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.1,
                 containers >= 0.3, directory >= 1.0.1, NineP >= 0.0.2, unix >= 2.4,
                 mtl >= 1.1
-extensions:     DeriveDataTypeable, TypeSynonymInstances
+extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 
 exposed-modules:
     GHC.IO.CSPHandle, System.IO9.NameSpace.Pure, System.IO9.NameSpace.IO,
-    System.IO9.Device, System.IO9.Devices.DevPosix, Control.Monad.NineT
+    System.IO9.Device, System.IO9.Devices.DevPosix, Control.Monad.NineM
 

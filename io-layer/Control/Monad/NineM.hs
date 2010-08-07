@@ -1,6 +1,6 @@
 ------------------------------------------------------------------
 -- |
--- Module      :  Control.Monad.NineT
+-- Module      :  Control.Monad.NineM
 -- Copyright   :  (c) Dmitry Golubovsky, 2010
 -- License     :  BSD-style
 -- 
@@ -10,10 +10,10 @@
 -- 
 --
 --
--- A monad transformer on top of IO to communicate with virtual devices
+-- A monad on top of IO to communicate with virtual devices
 ------------------------------------------------------------------
 
-module Control.Monad.NineT (
+module Control.Monad.NineM (
   Device
  ,device
  ,freshdev
@@ -21,16 +21,18 @@ module Control.Monad.NineT (
  ,startup
 ) where
 
+import Prelude hiding (catch)
 import System.IO9.Device hiding (get, put)
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.Error
+import Control.Exception
 import Data.Char
 import qualified Data.IntMap as I
 import qualified Data.Map as M
 
--- The NineT monad transformer is based on the StateT transformer. It operates at thread
+-- The NineM monad transformer is based on the StateT transformer. It operates at thread
 -- level, and provides convenient wrappers for 9P2000 operations as well as functions
 -- for thread management. Not much is exported from this module; most of data types remains
 -- opaque to this monad's "clients".
@@ -62,11 +64,11 @@ initState = ThreadState 0
 
 -- The transformer itself.
 
-type NineT a = StateT ThreadState IO a
+type NineM a = StateT ThreadState IO a
 
 -- Utility: get a unique (thread-wise) integer number.
 
-nextInt :: NineT Int
+nextInt :: NineM Int
 
 nextInt = do
   s <- get
@@ -76,13 +78,13 @@ nextInt = do
 
 -- Utility: get device by device index.
 
-findDev :: Int -> NineT (Maybe (Device9P, Char))
+findDev :: Int -> NineM (Maybe (Device9P, Char))
 
 findDev di = get >>= return . I.lookup di . devMap
 
 -- Utility: update devices map with new state of a device by given index.
 
-updDev :: Int -> Device9P -> NineT ()
+updDev :: Int -> Device9P -> NineM ()
 
 updDev di dev = do
   s <- get
@@ -100,7 +102,7 @@ updDev di dev = do
 
 device :: Char                         -- ^ Device character       
        -> IO Device9P                  -- ^ Driver creation function
-       -> NineT ()
+       -> NineM ()
 
 device dc di = do
   s <- get
@@ -113,7 +115,7 @@ device dc di = do
 -- just as it was registered by 'device'. The function fails if no device can be
 -- found by the letter provided.
 
-freshdev :: Char -> NineT Device
+freshdev :: Char -> NineM Device
 
 freshdev dc = do
   mbd <- get >>= return . M.lookup dc . devTab
@@ -130,7 +132,7 @@ freshdev dc = do
 -- even when an error response is returned. In case of a error response, the function fails
 -- with the string provided with the error message. Otherwise response is returned.
 
-devmsg :: Device -> VarMsg -> NineT VarMsg
+devmsg :: Device -> VarMsg -> NineM VarMsg
 
 devmsg (Device di) msgb = do
   tag <- nextInt >>= return . fromIntegral
@@ -152,7 +154,18 @@ devmsg (Device di) msgb = do
 -- | Run the "main" program. This is the only entry point into this monad visible
 -- from the outside. 
 
-startup :: NineT () -> IO ()
+instance Error AsyncException
 
-startup = flip evalStateT initState
+startup :: NineM () -> IO ()
+
+startup x = flip evalStateT initState ((x `catchSome` \ex ->
+  liftIO (putStrLn ("NineM Caught: " ++ show ex)) >> return ()) >> liftIO (putStrLn "Bye"))
+
+m `catchAsync` h = StateT $ \s -> runStateT m s 
+   `catch`  \(e :: AsyncException) -> runStateT (h e) s
+
+m `catchSome` h = StateT $ \s -> runStateT m s 
+   `catch`  \(e :: SomeException) -> runStateT (h e) s
+
+
 

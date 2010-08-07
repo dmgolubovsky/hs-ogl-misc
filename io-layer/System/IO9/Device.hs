@@ -51,10 +51,12 @@ module System.IO9.Device (
  ,c_OCEXEC
  ,c_ORCLOSE
  ,c_OEXCL
+ ,c_NOFID
 ) where
 
 import Data.Word
 import Data.NineP
+import Data.Bits
 
 -- | A data type to encode responses from virtual devices. Such responses contain
 -- the returned message and the continuation function to process the next request.
@@ -123,39 +125,47 @@ body2type Tstat {} = TTstat
 body2type Twstat {} = TTwstat
 body2type _ = XXX_TTerror
 
+-- | A special FID value (~ 0) to use in the attach message without authentication, and
+-- (as extension to the existing 9P2000 specification) in the clunk message to clunk all
+-- FIDs, basically to shutdown the entire device instance.
+
+c_NOFID :: Word32
+
+c_NOFID = complement 0
+
 -- Constants used in 9P2000 messages excange: obtained by running HSFFIG
 -- against the relevant portion of include/libc.h (from the Plan9 source tree).
 
-c_DMAPPEND = 1073741824
-c_DMAUTH = 134217728
-c_DMDEVICE = 8388608
-c_DMDIR = 2147483648
-c_DMEXCL = 536870912
-c_DMEXEC = 1
-c_DMMOUNT = 268435456
-c_DMNAMEDPIPE = 2097152
-c_DMREAD = 4
-c_DMSETGID = 262144
-c_DMSETUID = 524288
-c_DMSOCKET = 1048576
-c_DMSYMLINK = 33554432
-c_DMTMP = 67108864
-c_DMWRITE = 2
-c_QTAPPEND = 64
-c_QTAUTH = 8
-c_QTDIR = 128
-c_QTEXCL = 32
-c_QTFILE = 0
-c_QTMOUNT = 16
-c_QTSYMLINK = 2
-c_QTTMP = 4
-c_OREAD = 0
-c_OWRITE = 1
-c_ORDWR = 2
-c_OEXEC = 3
-c_OTRUNC = 16
-c_OCEXEC = 32
-c_ORCLOSE = 64
-c_OEXCL	= 0x1000
+c_DMAPPEND = 1073741824 :: Word32
+c_DMAUTH = 134217728 :: Word32
+c_DMDEVICE = 8388608 :: Word32
+c_DMDIR = 2147483648 :: Word32
+c_DMEXCL = 536870912 :: Word32
+c_DMEXEC = 1 :: Word32
+c_DMMOUNT = 268435456 :: Word32
+c_DMNAMEDPIPE = 2097152 :: Word32
+c_DMREAD = 4 :: Word32
+c_DMSETGID = 262144 :: Word32
+c_DMSETUID = 524288 :: Word32
+c_DMSOCKET = 1048576 :: Word32
+c_DMSYMLINK = 33554432 :: Word32
+c_DMTMP = 67108864 :: Word32
+c_DMWRITE = 2 :: Word32
+c_QTAPPEND = 64 :: Word8
+c_QTAUTH = 8 :: Word8
+c_QTDIR = 128 :: Word8
+c_QTEXCL = 32 :: Word8
+c_QTFILE = 0 :: Word8
+c_QTMOUNT = 16 :: Word8
+c_QTSYMLINK = 2 :: Word8
+c_QTTMP = 4 :: Word8
+c_OREAD = 0 :: Word8
+c_OWRITE = 1 :: Word8
+c_ORDWR = 2 :: Word8
+c_OEXEC = 3 :: Word8
+c_OTRUNC = 16 :: Word8
+c_OCEXEC = 32 :: Word8
+c_ORCLOSE = 64 :: Word8
+c_OEXCL	= 0x1000 :: Word32
 
 

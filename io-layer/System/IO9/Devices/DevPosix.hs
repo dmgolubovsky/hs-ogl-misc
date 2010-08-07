@@ -75,7 +75,7 @@ newdata shr fp = DevPosix fp M.empty M.empty "" Nothing shr
 dpvers :: DevPosix -> Device9P
 
 dpvers devd msg@(Msg TTversion tg tv@Tversion {}) | tv_version tv == "9P2000" =
-  return $ Resp9P (msg {msg_typ = TRversion}) (dpauth devd)
+  return $ Resp9P (msg {msg_typ = TRversion}) (dpatch devd)
 
 dpvers devd msg = return $ Resp9P (errorMsg (msg_tag msg) $ 
                                              "Protocol negotiation failure" ++ show msg) 
@@ -88,15 +88,15 @@ dpvers devd msg = return $ Resp9P (errorMsg (msg_tag msg) $
 -- a regular file. If aname points to a non-existent file or directory, the operation
 -- fails, but the device remains in negotiated state.
 
-dpauth :: DevPosix -> Device9P
+dpatch :: DevPosix -> Device9P
 
-dpauth devd msg@(Msg TTattach tg ta@Tattach {}) = do
+dpatch devd msg@(Msg TTattach tg ta@Tattach {}) = do
   let norm = normalise (hfp devd ++ "/" ++ tat_aname ta)
   tree <- canonicalizePath norm 
   ex <- fileExist tree
   case ex && isSubdir (hfp devd) tree of
     False -> return $ Resp9P (errorMsg (msg_tag msg) $ "Invalid or non-existent path " ++ 
-                                                      tat_aname ta) (dpauth devd)
+                                                      tat_aname ta) (dpatch devd)
     True -> do
       let fidmap' = M.insert (tat_fid ta) tree (fidmap devd)
       stat <- getFileStatus tree
@@ -108,9 +108,16 @@ dpauth devd msg@(Msg TTattach tg ta@Tattach {}) = do
                         ,uname = tat_uname ta
                         ,thrid = Just tid})
 
+-- This device does not require authentication.
+
+dpatch devd msg@(Msg TTauth tg ta) = 
+                  return $ Resp9P (errorMsg (msg_tag msg) $ "Authentication not reauired") 
+                                  (dpvers $ newdata (devshr devd) (hfp devd))
+
+
 -- Any message other than Auth throws a unnegotiated device entry to the client.
 
-dpauth devd msg = return $ Resp9P (errorMsg (msg_tag msg) $ "Not authenticated") 
+dpatch devd msg = return $ Resp9P (errorMsg (msg_tag msg) $ "Not attached") 
                                   (dpvers $ newdata (devshr devd) (hfp devd))
 
 -- At this point we can accept walk/open/read/write/etc. messages. If the "shared" flag
@@ -124,7 +131,7 @@ dpacc :: DevPosix -> Device9P
 
 dpacc devd msg | msg_typ msg == TTversion = dpvers (newdata (devshr devd) (hfp devd)) msg
 
-dpacc devd msg | msg_typ msg == TTauth = dpauth (newdata (devshr devd) (hfp devd)) msg
+dpacc devd msg | msg_typ msg == TTauth = dpatch (newdata (devshr devd) (hfp devd)) msg
  
 dpacc devd msg | msg_typ msg == TTflush = 
   return $ Resp9P (msg {msg_typ = TRflush, msg_body = Rflush}) (dpacc devd) 
@@ -153,17 +160,15 @@ dpacc devd msg = do
                 return $ Resp9P (msg {msg_typ = TRstat, msg_body = Rstat [ret]}) (dpacc devd)
       (TTclunk, Tclunk {}) -> do
         let clfid = tcl_fid $ msg_body msg
-            clmode = M.lookup clfid $ openmap devd
-            clpath = M.lookup clfid $ fidmap devd
-            (rm, cl) = case clmode of
-              Nothing -> (False, False)
-              Just (m, mbfd) -> ((fromIntegral m .&. c_ORCLOSE) /= 0, isJust mbfd)
-            openmap' = M.delete clfid $ openmap devd
-            fidmap' = M.delete clfid $ fidmap devd
-            devd' = devd {openmap = openmap', fidmap = fidmap'}
-        when cl $ closeFd (fromJust . snd . fromJust $ clmode)
-        when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
-        return $ Resp9P (msg {msg_typ = TRclunk, msg_body = Rclunk}) (dpacc devd')
+            rclunk dv = return $ Resp9P (msg {msg_typ = TRclunk, msg_body = Rclunk}) dv
+        if clfid == c_NOFID         -- this special value causes all FIDs to be clunked,
+          then do                   -- and the device returned to the unauthenticated state
+            let fids = M.keys (fidmap devd)
+            mapM_ (clunk devd) fids
+            rclunk . dpvers $ newdata (devshr devd) (hfp devd)
+          else do
+            devd' <- clunk devd clfid
+            rclunk . dpacc $ devd'
       (TTwalk, Twalk {}) -> do
         let twfid = tw_fid $ msg_body msg
             twnfid = tw_newfid $ msg_body msg
@@ -190,6 +195,22 @@ dpacc devd msg = do
               
       _ -> emsg $ "Incorrect message " ++ show msg
 
+-- Clunk one fid, update the internal data as needed.
+
+clunk :: DevPosix -> Word32 -> IO DevPosix
+
+clunk devd clfid = do
+  let clmode = M.lookup clfid $ openmap devd
+      clpath = M.lookup clfid $ fidmap devd
+      (rm, cl) = case clmode of
+        Nothing -> (False, False)
+        Just (m, mbfd) -> ((m .&. c_ORCLOSE) /= 0, isJust mbfd)
+      openmap' = M.delete clfid $ openmap devd
+      fidmap' = M.delete clfid $ fidmap devd
+      devd' = devd {openmap = openmap', fidmap = fidmap'}
+  when cl $ closeFd (fromJust . snd . fromJust $ clmode)
+  when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
+  return devd'
 
 -- Walk the given path from the base step by step.
 
@@ -232,7 +253,7 @@ stat2qid stat =
       inode = fileID stat
       ctime = modificationTime stat
       qid = Qid {
-        qid_typ = if isdir then fromIntegral c_QTDIR else 0
+        qid_typ = if isdir then c_QTDIR else 0
        ,qid_vers = round(realToFrac ctime)
        ,qid_path = fromIntegral inode
       }
@@ -261,7 +282,7 @@ stat2mode st =
       mbit acc (umb, nmb) = case umb .&. umode of
         0 -> acc
         _ -> acc .|. nmb
-  in  fromIntegral nmode
+  in  nmode
 
 -- Convert a Unix stat record to 9P2000 stat record.
 
