@@ -15,6 +15,7 @@
 
 module Control.Monad.NineM (
   Device
+ ,ThreadCompl (..)
  ,device
  ,freshdev
  ,devmsg
@@ -24,6 +25,7 @@ module Control.Monad.NineM (
 import Prelude hiding (catch)
 import System.IO9.Device hiding (get, put)
 import Control.Monad
+import Control.Concurrent
 import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.Error
@@ -38,37 +40,75 @@ import qualified Data.Map as M
 -- opaque to this monad's "clients".
 
 -- | A newtype wrapper for a device reference (just a number indeed). It is opaque
--- for the code that uses this monad.
+-- to the external code that uses this monad.
 
 newtype Device = Device {devRef :: Int}
 
 -- Internal structure of a thread state.
 
-data ThreadState = ThreadState {
-  intGen :: Int                         -- Integer number incremental generator
-                                        -- to use for tags, fids, device indices, etc.
- ,devMap :: I.IntMap (Device9P, Char)   -- Device reference map. Each time a device is attached,
-                                        -- a new index is generated, and the device is
-                                        -- referenced by that index through this map.
- ,thrEnv :: M.Map String String         -- Thread's own environment needed at this level.
- ,devTab :: M.Map Char Device9P         -- Table of devices (by letter)
-
+data ThreadState u = ThreadState {
+  intGen :: Int                              -- Integer number incremental generator
+                                             -- to use for tags, fids, device indices, etc.
+ ,devMap :: I.IntMap (Device9P, Char)        -- Device reference map. Each time a device is 
+                                             -- attached, a new index is generated, and the device
+                                             -- is referenced by that index through this map.
+ ,thrEnv :: M.Map String String              -- Thread's own environment needed at this level.
+ ,devTab :: M.Map Char Device9P              -- Table of devices (by letter)
+ ,userState :: u                             -- This thread's user state
+ ,thrMap :: M.Map ThreadId                   -- Child thread reference map, contains a MVar
+                  (MVar (ThreadCompl u))     -- where thread completion result is stored,
+                                             -- keyed by the GHC thread identifier from forkIO.
 }
+
+-- | A structure to store thread completion result. A thread may complete with
+-- its state returned to the parent or hidden; send the state to the parent and
+-- continue, send the state and detach, die, or die hard.
+
+data ThreadCompl u =
+   ThreadCompleted u                         -- ^ Thread completed normally, and its state is 
+                                             -- provided to its parent. This returned
+                                             -- state may be merged into the parent state. This
+                                             -- approach replaces the Plan 9 approach allowing
+                                             -- child processes to share their system state
+                                             -- (namespace, environment, etc).
+ | ThreadDetached (Maybe u)                  -- ^ Thread detached from its parent (that is, became
+                                             -- a leader of its own group). It may send a snapshot
+                                             -- of its state to the parent.
+ | ThreadRunning u                           -- ^ Thread is running and notifies the parent
+                                             -- of its state. This may be used in interactive
+                                             -- programs when a child process (e. g. a shell) wants
+                                             -- to update its parent (an application manager)
+                                             -- of its namespace change. Requires some cooperation
+                                             -- between parent and child.
+ | ThreadDied String                         -- ^ Uncaught exception (including asynchronous)
+                                             -- was processed at the top level within the NineM
+                                             -- monad. Thread state is obviously lost. The string
+                                             -- contains some description of the exception caught.
+ | ThreadDiedHard String                     -- ^ Uncaught exception was processed at the IO monad
+                                             -- level (that is, uncaught within NineM).
+   deriving (Show)
 
 -- Initialize thread state.
 
-initState = ThreadState 0 
-                        I.empty 
-                        M.empty
-                        M.empty
+initState :: u -> ThreadState u
 
--- The transformer itself.
+initState u = ThreadState 0 
+                          I.empty 
+                          M.empty
+                          M.empty
+                          u
+                          M.empty
 
-type NineM a = StateT ThreadState IO a
+-- The monad itself. It is parameterized by the type of user part of the state.
+-- At the NineM level, no operations over the internal structure of user state
+-- are performed, but thread management functions allow for user state exchange
+-- between parent and child threads.
+
+type NineM u a = StateT (ThreadState u) IO a
 
 -- Utility: get a unique (thread-wise) integer number.
 
-nextInt :: NineM Int
+nextInt :: NineM u Int
 
 nextInt = do
   s <- get
@@ -78,13 +118,13 @@ nextInt = do
 
 -- Utility: get device by device index.
 
-findDev :: Int -> NineM (Maybe (Device9P, Char))
+findDev :: Int -> NineM u (Maybe (Device9P, Char))
 
 findDev di = get >>= return . I.lookup di . devMap
 
 -- Utility: update devices map with new state of a device by given index.
 
-updDev :: Int -> Device9P -> NineM ()
+updDev :: Int -> Device9P -> NineM u ()
 
 updDev di dev = do
   s <- get
@@ -102,7 +142,7 @@ updDev di dev = do
 
 device :: Char                         -- ^ Device character       
        -> IO Device9P                  -- ^ Driver creation function
-       -> NineM ()
+       -> NineM u ()
 
 device dc di = do
   s <- get
@@ -115,7 +155,7 @@ device dc di = do
 -- just as it was registered by 'device'. The function fails if no device can be
 -- found by the letter provided.
 
-freshdev :: Char -> NineM Device
+freshdev :: Char -> NineM u Device
 
 freshdev dc = do
   mbd <- get >>= return . M.lookup dc . devTab
@@ -132,7 +172,7 @@ freshdev dc = do
 -- even when an error response is returned. In case of a error response, the function fails
 -- with the string provided with the error message. Otherwise response is returned.
 
-devmsg :: Device -> VarMsg -> NineM VarMsg
+devmsg :: Device -> VarMsg -> NineM u VarMsg
 
 devmsg (Device di) msgb = do
   tag <- nextInt >>= return . fromIntegral
@@ -151,21 +191,49 @@ devmsg (Device di) msgb = do
         Rerror e -> fail e
         _ -> return rspb
 
--- | Run the "main" program. This is the only entry point into this monad visible
--- from the outside. 
+-- Thread life cycle. Being started with some initial state, it proceeds
+-- in the NineM monad until it returns, or an exception is caught. Once
+-- the thread terminates, its state cleanup is performed which involves
+-- clunking of all devices currently attached, and killing of all child
+-- threads known. The thread is associated with some MVar where the completion
+-- code will be stored (see 'ThreadCompl' data definition).
 
-instance Error AsyncException
+threadLife :: u -> MVar (ThreadCompl u) -> NineM u () -> IO ()
 
-startup :: NineM () -> IO ()
+threadLife u mv x = thrIO `catch` \(e :: SomeException) ->
+  putMVar mv (ThreadDiedHard $ show e) >> return () where
+  thrIO = flip evalStateT (initState u) (thrNine `catchSome` \(ee :: SomeException) -> do
+    liftIO $ putMVar mv $ ThreadDied $ show ee 
+    cleanUp)
+  thrNine = x >> get >>= liftIO . putMVar mv . ThreadCompleted . userState >> cleanUp
 
-startup x = flip evalStateT initState ((x `catchSome` \ex ->
-  liftIO (putStrLn ("NineM Caught: " ++ show ex)) >> return ()) >> liftIO (putStrLn "Bye"))
-
-m `catchAsync` h = StateT $ \s -> runStateT m s 
-   `catch`  \(e :: AsyncException) -> runStateT (h e) s
-
+-- Utility: catch SomeException inside a StateT transformer.
+    
 m `catchSome` h = StateT $ \s -> runStateT m s 
    `catch`  \(e :: SomeException) -> runStateT (h e) s
 
+-- Utility: clean up the thread state (user state remains untouched).
+
+cleanUp :: NineM u ()
+
+cleanUp = return ()
+
+-- | Run the "main" program. This is the only entry point into this monad visible
+-- from the outside. 
+
+
+startup :: Show u => u -> NineM u () -> IO ()
+
+startup u x = do
+  mv <- newEmptyMVar
+  threadLife u mv x
+  readMVar mv >>= putStrLn . show
+
+{-
+
+startup u x = flip evalStateT (initState u) ((x `catchSome` \ex ->
+  liftIO (putStrLn ("NineM Caught: " ++ show ex)) >> return ()) >> liftIO (putStrLn "Bye"))
+
+-}
 
 

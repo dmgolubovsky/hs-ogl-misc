@@ -17,7 +17,7 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   createDirectoryIfMissing True rootdir
-  startup $ do
+  startup () $ do
     device 'Z' $ devPosix True rootdir
     d <- freshdev 'Z'
     devmsg d $ Tversion 2048 "9P2000"
