@@ -58,6 +58,7 @@ data ThreadState u = ThreadState {
  ,thrMap :: M.Map ThreadId                   -- Child thread reference map, contains a MVar
                   (MVar (ThreadCompl u))     -- where thread completion result is stored,
                                              -- keyed by the GHC thread identifier from forkIO.
+ ,parMVar :: MVar (ThreadCompl u)            -- parent's MVar to send notifications to.
 }
 
 -- | A structure to store thread completion result. A thread may complete with
@@ -90,14 +91,15 @@ data ThreadCompl u =
 
 -- Initialize thread state.
 
-initState :: u -> ThreadState u
+initState :: u -> MVar (ThreadCompl u) -> ThreadState u
 
-initState u = ThreadState 0 
-                          I.empty 
-                          M.empty
-                          M.empty
-                          u
-                          M.empty
+initState u mv = ThreadState 0 
+                             I.empty 
+                             M.empty
+                             M.empty
+                             u
+                             M.empty
+                             mv
 
 -- The monad itself. It is parameterized by the type of user part of the state.
 -- At the NineM level, no operations over the internal structure of user state
@@ -201,11 +203,19 @@ devmsg (Device di) msgb = do
 threadLife :: u -> MVar (ThreadCompl u) -> NineM u () -> IO ()
 
 threadLife u mv x = thrIO `catch` \(e :: SomeException) ->
-  putMVar mv (ThreadDiedHard $ show e) >> return () where
-  thrIO = flip evalStateT (initState u) (thrNine `catchSome` \(ee :: SomeException) -> do
-    liftIO $ putMVar mv $ ThreadDied $ show ee 
-    cleanUp)
-  thrNine = x >> get >>= liftIO . putMVar mv . ThreadCompleted . userState >> cleanUp
+  tryPutMVar mv (ThreadDiedHard $ show e) >> return () where
+  thrIO = flip evalStateT (initState u mv) (thrNine `catchSome` \(ee :: SomeException) -> do
+    cleanUp
+    notifyParent mv . ThreadDied $ show ee)
+  thrNine = x >> cleanUp >> get >>= notifyParent mv . ThreadCompleted . userState
+
+-- Utility: modify state stored in the parent's MVar. Use a non-blocking function here
+-- since the parent may not want to read its children state immediately. Unread child states
+-- are lost.
+
+notifyParent :: MVar (ThreadCompl u) -> ThreadCompl u -> NineM u ()
+
+notifyParent mv tc = liftIO $ tryPutMVar mv tc >> return ()  
 
 -- Utility: catch SomeException inside a StateT transformer.
     
@@ -213,10 +223,22 @@ m `catchSome` h = StateT $ \s -> runStateT m s
    `catch`  \(e :: SomeException) -> runStateT (h e) s
 
 -- Utility: clean up the thread state (user state remains untouched).
+-- Things to clean up are:
+--  - clunk all attached (listed in devMap) devices with c_NOFID
+--  - kill all child threads (killThread will be sent to all of them; per GHC specs
+--    if a thread has finished, killThread has no effect).
+-- It is expected that each child thread when killed, will cleanup its own state
+-- (provided that each thread is started with threadLife).
+-- If an exception raises during cleanUp, it will be caught outside of the NineM,
+-- so ThreadDiedHard will be reported.
 
 cleanUp :: NineM u ()
 
-cleanUp = return ()
+cleanUp = do
+  s <- get
+  mapM_ (flip devmsg (Tclunk c_NOFID) . Device) (I.keys $ devMap s)
+  liftIO $ mapM_ killThread (M.keys $ thrMap s)
+  
 
 -- | Run the "main" program. This is the only entry point into this monad visible
 -- from the outside. 
@@ -229,11 +251,5 @@ startup u x = do
   threadLife u mv x
   readMVar mv >>= putStrLn . show
 
-{-
-
-startup u x = flip evalStateT (initState u) ((x `catchSome` \ex ->
-  liftIO (putStrLn ("NineM Caught: " ++ show ex)) >> return ()) >> liftIO (putStrLn "Bye"))
-
--}
 
 
