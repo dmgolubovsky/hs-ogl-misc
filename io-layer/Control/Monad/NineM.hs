@@ -20,17 +20,21 @@ module Control.Monad.NineM (
  ,freshdev
  ,devmsg
  ,startup
+ ,spawn
+ ,wait
 ) where
 
 import Prelude hiding (catch)
 import System.IO9.Device hiding (get, put)
 import Control.Monad
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.Error
 import Control.Exception
 import Data.Char
+import Data.Maybe
 import qualified Data.IntMap as I
 import qualified Data.Map as M
 
@@ -55,10 +59,10 @@ data ThreadState u = ThreadState {
  ,thrEnv :: M.Map String String              -- Thread's own environment needed at this level.
  ,devTab :: M.Map Char Device9P              -- Table of devices (by letter)
  ,userState :: u                             -- This thread's user state
- ,thrMap :: M.Map ThreadId                   -- Child thread reference map, contains a MVar
-                  (MVar (ThreadCompl u))     -- where thread completion result is stored,
-                                             -- keyed by the GHC thread identifier from forkIO.
- ,parMVar :: MVar (ThreadCompl u)            -- parent's MVar to send notifications to.
+ ,thrMap :: M.Map ThreadId                   -- Child thread reference map, contains a TVar
+                  (TVar (ThreadCompl u),     -- where thread completion result is stored,
+                  (MVar ()))                 -- keyed by the GHC thread identifier from forkIO.
+ ,parTVar :: TVar (ThreadCompl u)            -- parent's TVar to send notifications to.
 }
 
 -- | A structure to store thread completion result. A thread may complete with
@@ -66,7 +70,9 @@ data ThreadState u = ThreadState {
 -- continue, send the state and detach, die, or die hard.
 
 data ThreadCompl u =
-   ThreadCompleted u                         -- ^ Thread completed normally, and its state is 
+   ThreadStarted                             -- ^ Thread just started: this value is initially
+                                             -- stored in the TVar that holds thread user state.
+ | ThreadCompleted u                         -- ^ Thread completed normally, and its state is 
                                              -- provided to its parent. This returned
                                              -- state may be merged into the parent state. This
                                              -- approach replaces the Plan 9 approach allowing
@@ -91,15 +97,15 @@ data ThreadCompl u =
 
 -- Initialize thread state.
 
-initState :: u -> MVar (ThreadCompl u) -> ThreadState u
+initState :: u -> TVar (ThreadCompl u) -> ThreadState u
 
-initState u mv = ThreadState 0 
+initState u tv = ThreadState 0 
                              I.empty 
                              M.empty
                              M.empty
                              u
                              M.empty
-                             mv
+                             tv
 
 -- The monad itself. It is parameterized by the type of user part of the state.
 -- At the NineM level, no operations over the internal structure of user state
@@ -197,25 +203,27 @@ devmsg (Device di) msgb = do
 -- in the NineM monad until it returns, or an exception is caught. Once
 -- the thread terminates, its state cleanup is performed which involves
 -- clunking of all devices currently attached, and killing of all child
--- threads known. The thread is associated with some MVar where the completion
+-- threads known. The thread is associated with some TVar where the completion
 -- code will be stored (see 'ThreadCompl' data definition).
 
-threadLife :: u -> MVar (ThreadCompl u) -> NineM u () -> IO ()
+threadLife :: Maybe (ThreadState u) -> u -> TVar (ThreadCompl u) -> MVar () -> NineM u () -> IO ()
 
-threadLife u mv x = thrIO `catch` \(e :: SomeException) ->
-  tryPutMVar mv (ThreadDiedHard $ show e) >> return () where
-  thrIO = flip evalStateT (initState u mv) (thrNine `catchSome` \(ee :: SomeException) -> do
-    cleanUp
-    notifyParent mv . ThreadDied $ show ee)
-  thrNine = x >> cleanUp >> get >>= notifyParent mv . ThreadCompleted . userState
+threadLife mbsu u tv mv x = (thrIO `catch` \(e :: SomeException) ->
+  atomically (writeTVar tv . ThreadDiedHard $ show e) >> return ()) >> putMVar mv () where
+  thrs = fromMaybe (initState u tv) mbsu
+  thrIO = flip evalStateT thrs 
+                          (thrNine `catchSome` \(ee :: SomeException) -> do
+                             cleanUp
+                             notifyParent tv . ThreadDied $ show ee)
+  thrNine = x >> cleanUp >> get >>= notifyParent tv . ThreadCompleted . userState
 
--- Utility: modify state stored in the parent's MVar. Use a non-blocking function here
+-- Utility: modify state stored in the parent's TVar. Use a non-blocking function here
 -- since the parent may not want to read its children state immediately. Unread child states
 -- are lost.
 
-notifyParent :: MVar (ThreadCompl u) -> ThreadCompl u -> NineM u ()
+notifyParent :: TVar (ThreadCompl u) -> ThreadCompl u -> NineM u ()
 
-notifyParent mv tc = liftIO $ tryPutMVar mv tc >> return ()  
+notifyParent tv tc = liftIO $ atomically (writeTVar tv tc) >> return ()  
 
 -- Utility: catch SomeException inside a StateT transformer.
     
@@ -248,8 +256,40 @@ startup :: Show u => u -> NineM u () -> IO ()
 
 startup u x = do
   mv <- newEmptyMVar
-  threadLife u mv x
-  readMVar mv >>= putStrLn . show
+  tv <- atomically $ newTVar ThreadStarted
+  threadLife Nothing u tv mv x
+  atomically (readTVar tv) >>= putStrLn . show
 
+-- | Spawn a new thread given the entry point. The thread will inherit its parent's state.
+-- Devices will remain attached, however device drivers may reject messages from the child
+-- thread. User state will also be inherited.
 
+spawn :: NineM u () -> NineM u ThreadId
+
+spawn thr = do
+  s <- get
+  tv <- liftIO . atomically $ newTVar ThreadStarted
+  mv <- liftIO newEmptyMVar
+  let s' = s {thrMap = M.empty
+             ,parTVar = tv}
+  t <- liftIO . forkIO $ threadLife (Just s') undefined tv mv thr
+  let tm' = M.insert t (tv, mv) (thrMap s)
+  put s {thrMap = tm'}
+  return t
+
+-- | Wait for child thread completion or detach. Return the thread completion result. 
+-- This function blocks on the MVar found in the child threads map and upon wakeup
+-- reads the value from the TVar. Since MVar is written after TVar is modified with
+-- thread completion result, consistent value will be returned.
+
+wait :: ThreadId -> NineM u (ThreadCompl u)
+
+wait thr = do
+  s <- get
+  let thrv = M.lookup thr (thrMap s)
+  case thrv of
+    Nothing -> fail $ "not a child thread: " ++ show thr
+    Just (tv, mv) -> liftIO $ do
+      readMVar mv
+      atomically $ readTVar tv
 
