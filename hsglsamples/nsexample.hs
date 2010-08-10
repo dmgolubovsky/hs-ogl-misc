@@ -7,7 +7,9 @@ import System.FilePath
 import System.Directory
 import System.Environment
 import Control.Monad.NineM
+import Control.Monad.NameSpaceM
 import Control.Monad.Trans
+import System.IO9.NameSpace.Pure
 import System.IO9.Device
 import System.IO9.Devices.DevPosix
 
@@ -17,7 +19,7 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   createDirectoryIfMissing True rootdir
-  startup () $ do
+  startup (newNameSpace) $ do
     device 'Z' $ devPosix True rootdir
     d <- freshdev 'Z'
     devmsg d $ Tversion 2048 "9P2000"

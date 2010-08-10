@@ -38,7 +38,7 @@ import Data.Maybe
 import qualified Data.IntMap as I
 import qualified Data.Map as M
 
--- The NineM monad transformer is based on the StateT transformer. It operates at thread
+-- The NineM monad is based on the StateT transformer. It operates at thread
 -- level, and provides convenient wrappers for 9P2000 operations as well as functions
 -- for thread management. Not much is exported from this module; most of data types remains
 -- opaque to this monad's "clients".
