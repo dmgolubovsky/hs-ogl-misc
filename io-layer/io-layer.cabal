@@ -21,3 +21,5 @@ exposed-modules:
     GHC.IO.CSPHandle, System.IO9.NameSpace.Pure, Control.Monad.NameSpaceM,
     System.IO9.Device, System.IO9.Devices.DevPosix, Control.Monad.NineM
 
+other-modules:
+    PrivateDefs

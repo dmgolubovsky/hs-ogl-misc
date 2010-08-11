@@ -24,6 +24,7 @@ module Control.Monad.NineM (
  ,wait
 ) where
 
+import PrivateDefs
 import Prelude hiding (catch)
 import System.IO9.Device hiding (get, put)
 import Control.Monad
@@ -48,53 +49,6 @@ import qualified Data.Map as M
 
 newtype Device = Device {devRef :: Int}
 
--- Internal structure of a thread state.
-
-data ThreadState u = ThreadState {
-  intGen :: Int                              -- Integer number incremental generator
-                                             -- to use for tags, fids, device indices, etc.
- ,devMap :: I.IntMap (Device9P, Char)        -- Device reference map. Each time a device is 
-                                             -- attached, a new index is generated, and the device
-                                             -- is referenced by that index through this map.
- ,thrEnv :: M.Map String String              -- Thread's own environment needed at this level.
- ,devTab :: M.Map Char Device9P              -- Table of devices (by letter)
- ,userState :: u                             -- This thread's user state
- ,thrMap :: M.Map ThreadId                   -- Child thread reference map, contains a TVar
-                  (TVar (ThreadCompl u),     -- where thread completion result is stored,
-                  (MVar ()))                 -- keyed by the GHC thread identifier from forkIO.
- ,parTVar :: TVar (ThreadCompl u)            -- parent's TVar to send notifications to.
-}
-
--- | A structure to store thread completion result. A thread may complete with
--- its state returned to the parent or hidden; send the state to the parent and
--- continue, send the state and detach, die, or die hard.
-
-data ThreadCompl u =
-   ThreadStarted                             -- ^ Thread just started: this value is initially
-                                             -- stored in the TVar that holds thread user state.
- | ThreadCompleted u                         -- ^ Thread completed normally, and its state is 
-                                             -- provided to its parent. This returned
-                                             -- state may be merged into the parent state. This
-                                             -- approach replaces the Plan 9 approach allowing
-                                             -- child processes to share their system state
-                                             -- (namespace, environment, etc).
- | ThreadDetached (Maybe u)                  -- ^ Thread detached from its parent (that is, became
-                                             -- a leader of its own group). It may send a snapshot
-                                             -- of its state to the parent.
- | ThreadRunning u                           -- ^ Thread is running and notifies the parent
-                                             -- of its state. This may be used in interactive
-                                             -- programs when a child process (e. g. a shell) wants
-                                             -- to update its parent (an application manager)
-                                             -- of its namespace change. Requires some cooperation
-                                             -- between parent and child.
- | ThreadDied String                         -- ^ Uncaught exception (including asynchronous)
-                                             -- was processed at the top level within the NineM
-                                             -- monad. Thread state is obviously lost. The string
-                                             -- contains some description of the exception caught.
- | ThreadDiedHard String                     -- ^ Uncaught exception was processed at the IO monad
-                                             -- level (that is, uncaught within NineM).
-   deriving (Show)
-
 -- Initialize thread state.
 
 initState :: u -> TVar (ThreadCompl u) -> ThreadState u
@@ -106,13 +60,6 @@ initState u tv = ThreadState 0
                              u
                              M.empty
                              tv
-
--- The monad itself. It is parameterized by the type of user part of the state.
--- At the NineM level, no operations over the internal structure of user state
--- are performed, but thread management functions allow for user state exchange
--- between parent and child threads.
-
-type NineM u a = StateT (ThreadState u) IO a
 
 -- Utility: get a unique (thread-wise) integer number.
 
