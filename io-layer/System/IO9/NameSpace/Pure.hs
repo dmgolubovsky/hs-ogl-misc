@@ -24,7 +24,7 @@ module System.IO9.NameSpace.Pure (
  ,getGlobal
  ,isDevice
  ,deviceOf
- ,bindDirAt) where
+ ,addUnion) where
 
 import Data.Char
 import Data.List
@@ -76,11 +76,11 @@ unionDir fp = UnionDir (DL.singleton BoundDir {dirfp = fp, dircr = True})
 
 -- | Bind an actual directory at the given union point.
 
-bindDirAt :: UnionDir              -- ^ The union point where to bind a directory
+addUnion  :: UnionDir              -- ^ The union point where to bind a directory
           -> FilePath              -- ^ Actual file path to bind (not checked for existence)
           -> BindFlag              -- ^ Bind mode
           -> UnionDir              -- ^ Updated union point.
-bindDirAt (UnionDir dl) fp bf = case bf of
+addUnion (UnionDir dl) fp bf = case bf of
   BindRepl -> unionDir fp
   BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirfp = fp, dircr = cr}) dl
   BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirfp = fp, dircr = cr})

@@ -21,6 +21,7 @@ module PrivateDefs (
 ) where 
 
 import System.IO9.Device
+import System.IO9.NameSpace.Pure
 import Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM.TVar
@@ -87,5 +88,5 @@ type NineM u a = StateT (ThreadState u) IO a
 -- Forked thread inherit parent's namespace, and upon completion or notification
 -- the parent may incorporate namespace changes done by child threads.
 
-type NameSpaceM a = StateT NameSpace NineM a
+type NameSpaceM a = StateT NameSpace (StateT (ThreadState NameSpace) IO) a
 

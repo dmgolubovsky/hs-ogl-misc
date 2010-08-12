@@ -25,10 +25,10 @@ main :: IO ()
 
 main = do
   putStrLn "Testing directory handles"
-  uddv <- mkIOUnionDir (bindDirAt (unionDir "/lib") "/usr/lib" (BindAfter False))
+  uddv <- mkIOUnionDir (addUnion (unionDir "/lib") "/usr/lib" (BindAfter False))
   h <- mkFileHandle uddv "/lib:/usr/lib" ReadMode Nothing nativeNewlineMode
   hGetContents h >>= putStrLn >> hFlush stdout
-  uddv <- mkIOUnionDir (bindDirAt (unionDir "/bin") "/usr/bin" (BindBefore False))
+  uddv <- mkIOUnionDir (addUnion (unionDir "/bin") "/usr/bin" (BindBefore False))
   h <- mkFileHandle uddv "." ReadMode Nothing nativeNewlineMode
   hGetContents h >>= putStrLn >> hFlush stdout
 
