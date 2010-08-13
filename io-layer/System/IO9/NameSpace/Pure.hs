@@ -16,6 +16,8 @@
 module System.IO9.NameSpace.Pure (
   BoundDir (..)
  ,BindFlag (..)
+ ,NsValue (..)
+ ,NsKey (..)
  ,UnionDir (..)
  ,NameSpace
  ,newNameSpace
@@ -85,20 +87,20 @@ addUnion (UnionDir dl) fp bf = case bf of
   BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirfp = fp, dircr = cr}) dl
   BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirfp = fp, dircr = cr})
 
--- | A datatype to represent a namespace value.
+-- A datatype to represent a namespace value.
 
 data NsValue = UnionPoint UnionDir      -- ^ A union point
              | GlobalSetting String     -- ^ A global setting (not to be confused 
                                         -- with process environment)
                deriving (Eq, Ord, Show)
 
--- | A datattype to represent a namespace key.
+-- A datatype to represent a namespace key.
 
 data NsKey = NsPath FilePath            -- ^ File path of a union point as seen by threads
            | NsGlobal String            -- ^ Global setting
            deriving (Eq, Ord, Show)
 
--- | The namespace itself which is a map of 'NsKey's to 'NsValue's. Namespace data is stored at
+-- The namespace itself which is a map of 'NsKey's to 'NsValue's. Namespace data is stored at
 -- thread-level (may be shared between several threads) in a mutable reference, so impure
 -- namespace functions just update those references as needed.
 

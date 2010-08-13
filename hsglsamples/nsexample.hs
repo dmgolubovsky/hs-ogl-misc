@@ -9,7 +9,6 @@ import System.Environment
 import Control.Monad.NineM
 import Control.Monad.NameSpaceM
 import Control.Monad.Trans
-import System.IO9.NameSpace.Pure
 import Control.Monad.State
 import System.IO9.Device hiding (get, put)
 import System.IO9.Devices.DevPosix
@@ -21,8 +20,8 @@ main = do
   let dir = head (args ++ ["/"])
   createDirectoryIfMissing True rootdir
   startns $ do
-    liftIO . putStrLn $ "hello"
-    get >>= setGlobal "X" "Y" >>= put
+    lift $ device 'Z' $ devPosix True rootdir
+    bindPath BindRepl "#Z" "/"
 {-
     device 'Z' $ devPosix True rootdir
     d <- freshdev 'Z'
