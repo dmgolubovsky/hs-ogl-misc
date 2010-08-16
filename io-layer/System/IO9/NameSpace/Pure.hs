@@ -26,6 +26,7 @@ module System.IO9.NameSpace.Pure (
  ,getGlobal
  ,isDevice
  ,deviceOf
+ ,treeOf
  ,addUnion) where
 
 import Data.Char
@@ -68,7 +69,7 @@ data BindFlag = BindBefore Bool    -- ^ Bind before any directory bound to this 
 
 -- | A datatype to hold bound directories in an ordered list.
 
-data UnionDir = UnionDir (DL.DList BoundDir) deriving (Eq, Ord, Show)
+newtype UnionDir = UnionDir {unDir :: DL.DList BoundDir} deriving (Eq, Ord, Show)
 
 -- | Create an union directory containing a single directory. file creation
 -- is enabled by default.
@@ -132,12 +133,24 @@ getGlobal k ns = case M.lookup (NsGlobal k) ns of
 -- | Return 'True' is the given path is a device path (starts with #).
 
 isDevice :: FilePath -> Bool
+
 isDevice ('#':_) = True
 isDevice _ = False
 
 -- | Extract the device letter (if any) from the path. If this is not a device path,
 -- the 0 character is returned.
 
+deviceOf :: FilePath -> Char
+
 deviceOf ('#':d:_) = d
 deviceOf _ = chr 0
+
+-- | Extract the device file tree (if any) from the path. If this is not a device path
+-- an empty string is returned.
+
+treeOf :: FilePath -> FilePath
+
+treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in tree
+treeOf _ = ""
+
 

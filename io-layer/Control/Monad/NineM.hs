@@ -17,8 +17,11 @@ module Control.Monad.NineM (
   Device
  ,ThreadCompl (..)
  ,device
+ ,DEVFID
+ ,noDevice
  ,freshdev
  ,devmsg
+ ,nextInt
  ,startup
  ,spawn
  ,wait
@@ -49,6 +52,17 @@ import qualified Data.Map as M
 
 newtype Device = Device {devRef :: Int}
 
+instance Show Device where
+  show d = "Device: #" ++ show (devRef d)
+
+-- | Type synonym for a device-fid pair.
+
+type DEVFID = (Device, FID)
+
+-- | No-device.
+
+noDevice = Device (-1)
+
 -- Initialize thread state.
 
 initState :: u -> TVar (ThreadCompl u) -> ThreadState u
@@ -61,7 +75,7 @@ initState u tv = ThreadState 0
                              M.empty
                              tv
 
--- Utility: get a unique (thread-wise) integer number.
+-- | Get a unique (thread-wise) integer number.
 
 nextInt :: NineM u Int
 

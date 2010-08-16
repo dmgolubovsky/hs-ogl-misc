@@ -22,6 +22,8 @@ main = do
   startns $ do
     lift $ device 'Z' $ devPosix True rootdir
     bindPath BindRepl "#Z" "/"
+    evalPath "/aa" >>= liftIO . putStrLn . show
+    
 {-
     device 'Z' $ devPosix True rootdir
     d <- freshdev 'Z'

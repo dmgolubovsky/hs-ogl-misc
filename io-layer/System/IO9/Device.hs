@@ -20,6 +20,7 @@ module System.IO9.Device (
  ,errorMsg
  ,devError
  ,body2type
+ ,FID
  ,c_DMAPPEND
  ,c_DMAUTH
  ,c_DMDEVICE
@@ -124,6 +125,10 @@ body2type Tremove {} = TTremove
 body2type Tstat {} = TTstat
 body2type Twstat {} = TTwstat
 body2type _ = XXX_TTerror
+
+-- | Type synonym for FID.
+
+type FID = Word32
 
 -- | A special FID value (~ 0) to use in the attach message without authentication, and
 -- (as extension to the existing 9P2000 specification) in the clunk message to clunk all
