@@ -26,6 +26,7 @@ module Control.Monad.NameSpaceM (
 
 import PrivateDefs
 import Data.Char
+import Data.Word
 import qualified Data.DList as DL
 import Control.Monad
 import Control.Monad.NineM
@@ -112,12 +113,7 @@ eval_step dfid ("/" : rawps) hist eval | not (null hist) =
 eval_step dfid ("/" : rawps) hist eval = do
   rootd <- get >>= findroot
   liftIO $ putStrLn $ rootd
-  fid <- newfid
-  dv <- lift $ do
-    d <- freshdev (deviceOf rootd)
-    devmsg d $ Tversion 2048 "9P2000"
-    devmsg d $ Tattach fid c_NOFID "" (treeOf rootd)
-    return d
+  (dv, fid) <- attdev 2048 rootd
   eval_step (dv, fid) rawps ("/":hist) [rootd]
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
@@ -129,10 +125,27 @@ eval_step dfid ("/" : rawps) hist eval = do
 
 eval_step (dev, fid) (rawp : rawps) hist eval = do
   let jeval = joinPath eval
-  undir <- get >>= findunion jeval
+  undirs <- get >>= findunion jeval
   liftIO $ putStrLn $ show rawp
   liftIO $ putStrLn $ show jeval
-  liftIO $ putStrLn $ show undir
+  ress <- foldr mplus (fail $ "eval: stuck at " ++ jeval) $ 
+    flip map undirs $ \fp -> case (fp == jeval) of
+      True -> return (fp, dev, fid)
+      False -> do
+        (xdev, xfid) <- attdev 2048 fp
+        let tfp = tail (splitPath fp)
+        wfid <- newfid
+        (Rwalk rwlk) <- lift $ devmsg xdev $ Twalk xfid wfid tfp
+        lift $ devmsg xdev $ Tclunk xfid
+        case (length rwlk, length tfp) of
+          (1, 0) -> return (fp, xdev, wfid)
+          (x, y) | x == y -> return (fp, xdev, wfid)
+          _ -> mzero
+  
+
+  liftIO . putStrLn . show $ ress
+
+    
   fail "incomplete"
 
 -- Find the root entry in the namespace. The root entry is special that it always has
@@ -166,3 +179,16 @@ findunion fp ns = do
 newfid :: NameSpaceM FID
 
 newfid = lift nextInt >>= return . fromIntegral
+
+-- Attach a device with given letter and tree, get DEVFID for the device/tree.
+-- Username is always blank, and authorization is not requested.
+
+attdev :: Word32 -> FilePath -> NameSpaceM DEVFID
+
+attdev _ fp | not (isDevice fp) = return (noDevice, c_NOFID)
+
+attdev bufsz fp = newfid >>= \fid -> lift $ do
+  d <- freshdev (deviceOf fp)
+  devmsg d $ Tversion bufsz "9P2000"
+  devmsg d $ Tattach fid c_NOFID "" (treeOf fp)
+  return (d, fid)
