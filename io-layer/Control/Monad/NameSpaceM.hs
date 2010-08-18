@@ -88,33 +88,51 @@ evalPath fp | not (isAbsolute fp || isDevice fp) =
   fail "eval: path should be absolute"
 
 evalPath fp = do
-  (d, e) <- eval_step (noDevice, c_NOFID) (splitPath fp) [] []
+  (d, e) <- eval_root (splitPath fp)
   return (fst d, snd d, joinPath e)
-
--- Evaluate path step-wise.
-
-eval_step :: DEVFID -> [FilePath] -> [FilePath] -> [FilePath] -> NameSpaceM (DEVFID, [FilePath])
-
--- Entire raw path consumed: evaluation complete.
-
-eval_step dfid [] _ eval = return (dfid, eval)
-
--- Dot on the path: skip it.
-
-eval_step dfid ("." : rawps) hist eval = eval_step dfid rawps hist eval
 
 -- Root element. Look it up in the namespace. If not found, fail. If found, obtain its FID,
 -- place it on the evaluated path, remove from the unevaluated part, recurse. History must be empty
 -- at this point.
 
-eval_step dfid ("/" : rawps) hist eval | not (null hist) = 
-  fail "eval: root element in the middle"
+eval_root :: [FilePath] -> NameSpaceM (DEVFID, [FilePath])
 
-eval_step dfid ("/" : rawps) hist eval = do
+eval_root ("/" : rawps) = do
   rootd <- get >>= findroot
-  liftIO $ putStrLn $ rootd
-  (dv, fid) <- attdev 2048 rootd
-  eval_step (dv, fid) rawps ("/":hist) [rootd]
+  eval_root (rootd : rawps)
+
+-- If the path to evaluate is indeed a device path, attach the given device and tree
+-- and proceed as if it was the root element.
+
+eval_root (dvp : rawps) | isDevice dvp = do
+  liftIO . putStrLn $ dvp
+  liftIO . putStrLn . show $ rawps
+  (dv, fid) <- attdev 2048 dvp
+  eval_step (dv, fid) rawps [dvp]
+
+eval_root _ = fail "eval: empty or not absolute/device filepath"
+
+-- Evaluate the rest of the path step-wise.
+
+eval_step :: DEVFID -> [FilePath] -> [FilePath] -> NameSpaceM (DEVFID, [FilePath])
+
+-- Entire raw path consumed: evaluation complete.
+
+eval_step dfid [] eval = return (dfid, eval)
+
+-- Dot on the path: skip it.
+
+eval_step dfid ("./" : rawps) eval = eval_step dfid rawps eval
+eval_step dfid ("." : rawps) eval = eval_step dfid rawps eval
+
+-- DotDot: take one step up the evaluated path.
+
+eval_step dfid ("../" : rawps) eval = eval_step dfid (".." : rawps) eval
+
+eval_step _ (".." : rawps) [] = fail "eval: cannot go up too far"
+
+eval_step dfid (".." : rawps) eval = 
+  eval_step (noDevice, c_NOFID) rawps (reverse . tail . reverse $ eval)
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
 -- either single or multiple path). One of them may be the one we already have a FID for
@@ -123,30 +141,31 @@ eval_step dfid ("/" : rawps) hist eval = do
 -- has been found, replace eval with it, and repeat until the path to evaluate is entirely
 -- consumed.
 
-eval_step (dev, fid) (rawp : rawps) hist eval = do
+eval_step (dev, fid) (rawp : rawps) eval = do
   let jeval = joinPath eval
+      nrawp = normalise (rawp ++ "/")
   undirs <- get >>= findunion jeval
   liftIO $ putStrLn $ show rawp
   liftIO $ putStrLn $ show jeval
-  ress <- foldr mplus (fail $ "eval: stuck at " ++ jeval) $ 
-    flip map undirs $ \fp -> case (fp == jeval) of
-      True -> return (fp, dev, fid)
-      False -> do
-        (xdev, xfid) <- attdev 2048 fp
-        let tfp = tail (splitPath fp)
-        wfid <- newfid
-        (Rwalk rwlk) <- lift $ devmsg xdev $ Twalk xfid wfid tfp
-        lift $ devmsg xdev $ Tclunk xfid
-        case (length rwlk, length tfp) of
-          (1, 0) -> return (fp, xdev, wfid)
-          (x, y) | x == y -> return (fp, xdev, wfid)
-          _ -> mzero
-  
+  ress@(rfp, rdev, rfid) <- foldr mplus (fail $ "eval: cannot walk " ++ (jeval </> nrawp)) $ 
+    flip map undirs $ \fp -> do
+      (zfp, zdev, zfid, zeval) <- case (fp == jeval) of
+        True | fid /= c_NOFID -> return ([nrawp], dev, fid, eval ++ [nrawp])
+        _ -> do
+          (xdev, xfid) <- attdev 2048 fp
+          let tfp = tail (splitPath fp) ++ [nrawp]
+          return (tfp, xdev, xfid, splitPath fp ++ [nrawp])
+      wfid <- newfid
+      (Rwalk rwlk) <- lift . devmsg zdev $ Twalk zfid wfid zfp
+      lift . devmsg zdev $ Tclunk zfid
+      case (length rwlk, length zfp) of
+        (1, 0) -> return (zeval, zdev, wfid)
+        (x, y) | x == y -> return (zeval, zdev, wfid)
+        _ -> mzero
 
   liftIO . putStrLn . show $ ress
 
-    
-  fail "incomplete"
+  eval_step (rdev, rfid) rawps rfp    
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
