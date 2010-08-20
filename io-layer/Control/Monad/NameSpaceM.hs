@@ -15,6 +15,7 @@
 
 module Control.Monad.NameSpaceM (
   BindFlag (..)
+ ,EvalPath (..)
  ,startns
  ,bindPath
  ,evalPath
@@ -70,69 +71,106 @@ bindPath fl new old | old == "/" && isDevice new = do
   case e of
     True -> do
       let ud = unionDir new
-      modify (M.insert (NsPath old) (UnionPoint ud))
+      modify (M.insert (NsPath old) (UnionPoint ud new))
     False -> bind_common fl new old
 
 bindPath fl new old = bind_common fl new old
 
 bind_common fl new old = fail "unimplemented"
 
+-- | Data type to represent an evaluated path. It is returned from the 'evalPath' function.
+
+data EvalPath = EvalPath {
+  epDev :: Device                             -- ^ Reference to the device where the path resides
+ ,epFID :: FID                                -- ^ FID for the above device and path
+ ,epCanon :: FilePath                         -- ^ Canonicalized (with dot-paths) removed path
+ ,epEval :: FilePath                          -- ^ Evaluated (starting at the device) path
+} deriving (Show)
+
 -- | Evaluate a file path (absolute or device) using the current namespace. The function will try
 -- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
 -- of the path off. If successful, FID of the last path component is returned. Otherwise
 -- the function fails (e. g. if a device driver returns an error message).
 
-evalPath :: FilePath -> NameSpaceM (Device, FID, FilePath)
+evalPath :: FilePath -> NameSpaceM EvalPath
 
 evalPath fp | not (isAbsolute fp || isDevice fp) =
   fail "eval: path should be absolute"
 
 evalPath fp = do
-  (d, e) <- eval_root (splitPath fp)
-  return (fst d, snd d, joinPath e)
+  (d, c, e) <- eval_root (splitPath fp) []
+  return $ EvalPath (fst d) (snd d) (joinPath c) (joinPath e)
 
 -- Root element. Look it up in the namespace. If not found, fail. If found, obtain its FID,
 -- place it on the evaluated path, remove from the unevaluated part, recurse. History must be empty
 -- at this point.
 
-eval_root :: [FilePath] -> NameSpaceM (DEVFID, [FilePath])
+eval_root :: [FilePath] -> [FilePath] -> NameSpaceM (DEVFID, [FilePath], [FilePath])
 
-eval_root ("/" : rawps) = do
+eval_root ("/" : rawps) _ = do
   rootd <- get >>= findroot
-  eval_root (rootd : rawps)
+  eval_root (rootd : rawps) ["/"]
 
 -- If the path to evaluate is indeed a device path, attach the given device and tree
 -- and proceed as if it was the root element.
 
-eval_root (dvp : rawps) | isDevice dvp = do
-  liftIO . putStrLn $ dvp
-  liftIO . putStrLn . show $ rawps
+eval_root (dvp : rawps) xps | isDevice dvp = do
   (dv, fid) <- attdev 2048 dvp
-  eval_step (dv, fid) rawps [dvp]
+  let orig = head (xps ++ [dvp])
+  eval_step (dv, fid) rawps [orig] [dvp]
 
-eval_root _ = fail "eval: empty or not absolute/device filepath"
+eval_root _ _ = fail "eval: empty or not absolute/device filepath"
 
 -- Evaluate the rest of the path step-wise.
 
-eval_step :: DEVFID -> [FilePath] -> [FilePath] -> NameSpaceM (DEVFID, [FilePath])
+eval_step :: DEVFID -> [FilePath] -> [FilePath] -> [FilePath] 
+  -> NameSpaceM (DEVFID, [FilePath], [FilePath])
 
 -- Entire raw path consumed: evaluation complete.
 
-eval_step dfid [] eval = return (dfid, eval)
+eval_step dfid [] orig eval = return (dfid, orig, eval)
 
 -- Dot on the path: skip it.
 
-eval_step dfid ("./" : rawps) eval = eval_step dfid rawps eval
-eval_step dfid ("." : rawps) eval = eval_step dfid rawps eval
+eval_step dfid ("./" : rawps) orig eval = eval_step dfid rawps orig eval
+eval_step dfid ("." : rawps) orig eval = eval_step dfid rawps orig eval
 
--- DotDot: take one step up the evaluated path.
+-- DotDot: use the logic from http://doc.cat-v.org/plan_9/4th_edition/papers/lexnames
+-- If original path consists of only one element, ignore dotdot.
+-- If evaluated path consists of only one element, fail: this is an internal error.
+-- Take one element off the original path. Lookup the namespace if the resulting original
+-- path marks any of the union points. If it does, retrieve its evaluated counterpart:
+-- parent may reside on a different filesystem than child. Substitute the retrieved evaluated
+-- path to the evaluated path and do the next step.
+-- Otherwise just the original path minus one element and evaluated path minus one element.
+-- In either case, new FID has to be obtained fo the new evaluated path.
 
-eval_step dfid ("../" : rawps) eval = eval_step dfid (".." : rawps) eval
+eval_step dfid ("../" : rawps) orig eval = eval_step dfid (".." : rawps) orig eval
 
-eval_step _ (".." : rawps) [] = fail "eval: cannot go up too far"
+eval_step dfid (".." : rawps) orig [eval] = do
+  lift . devmsg (fst dfid) $ Tclunk (snd dfid)
+  fail $ "eval: internal error: .. with singleton evaluated path at " ++ joinPath orig
 
-eval_step dfid (".." : rawps) eval = 
-  eval_step (noDevice, c_NOFID) rawps (reverse . tail . reverse $ eval)
+eval_step dfid (".." : rawps) [orig] eval = eval_step dfid rawps [orig] eval
+
+eval_step dfid (".." : rawps) orig eval = do
+  let chop = reverse . tail . reverse                     -- chop the last element off
+      origp = chop orig
+      evalp = chop eval
+  up <- get >>= return . M.lookup (NsPath $ joinPath origp)
+  let neval = case up of
+        Just (UnionPoint _ fp) -> splitPath fp
+        _ -> evalp
+  lift . devmsg (fst dfid) $ Tclunk (snd dfid)
+  (ndev, nfid) <- attdev 2048 (head neval)
+  wfid <- newfid
+  let wp = tail neval
+  (Rwalk rwlk) <- lift . devmsg ndev $ Twalk nfid wfid wp
+  lift . devmsg ndev $ Tclunk nfid
+  case (length rwlk, length wp) of
+    (1, 0) -> eval_step (ndev, wfid) rawps origp neval
+    (x, y) | x == y -> eval_step (ndev, wfid) rawps origp neval
+    _ -> fail $ "eval: cannot walk up from " ++ joinPath orig
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
 -- either single or multiple path). One of them may be the one we already have a FID for
@@ -141,16 +179,17 @@ eval_step dfid (".." : rawps) eval =
 -- has been found, replace eval with it, and repeat until the path to evaluate is entirely
 -- consumed.
 
-eval_step (dev, fid) (rawp : rawps) eval = do
+eval_step (dev, fid) (rawp : rawps) orig eval = do
   let jeval = joinPath eval
+      jorig = joinPath orig
       nrawp = normalise (rawp ++ "/")
-  undirs <- get >>= findunion jeval
-  liftIO $ putStrLn $ show rawp
+  undirs <- get >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
+  liftIO $ putStrLn $ show jorig
   liftIO $ putStrLn $ show jeval
   ress@(rfp, rdev, rfid) <- foldr mplus (fail $ "eval: cannot walk " ++ (jeval </> nrawp)) $ 
     flip map undirs $ \fp -> do
       (zfp, zdev, zfid, zeval) <- case (fp == jeval) of
-        True | fid /= c_NOFID -> return ([nrawp], dev, fid, eval ++ [nrawp])
+        True -> return ([nrawp], dev, fid, eval ++ [nrawp])
         _ -> do
           (xdev, xfid) <- attdev 2048 fp
           let tfp = tail (splitPath fp) ++ [nrawp]
@@ -165,7 +204,7 @@ eval_step (dev, fid) (rawp : rawps) eval = do
 
   liftIO . putStrLn . show $ ress
 
-  eval_step (rdev, rfid) rawps rfp    
+  eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
@@ -181,8 +220,8 @@ findroot ns = do
     _ -> fail "eval: no root binding in the namespace"
 
 -- Find all files/directories bound at the given union point. If the namespace provided
--- does not contain the union point provided, just pretend that one exists, consisting only
--- of itself. No normalization or canonicalization of the union point path is done here,
+-- does not contain the union point provided, return an empty list.
+-- No normalization or canonicalization of the union point path is done here,
 -- as well as of the union point contents.
 
 findunion :: FilePath -> NameSpace -> NameSpaceM [FilePath]
@@ -190,8 +229,8 @@ findunion :: FilePath -> NameSpace -> NameSpaceM [FilePath]
 findunion fp ns = do
   let up = M.lookup (NsPath fp) ns
   case up of
-    Just (UnionPoint ud) -> return . map dirfp . DL.toList $ unDir ud 
-    _ -> return [fp]
+    Just (UnionPoint ud fp) -> return . map dirfp . DL.toList $ unDir ud 
+    _ -> return []
 
 -- New number for a FID: just lifted from the underlying monad.
 

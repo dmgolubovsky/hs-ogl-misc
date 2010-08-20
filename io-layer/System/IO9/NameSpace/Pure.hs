@@ -90,9 +90,9 @@ addUnion (UnionDir dl) fp bf = case bf of
 
 -- A datatype to represent a namespace value.
 
-data NsValue = UnionPoint UnionDir      -- ^ A union point
-             | GlobalSetting String     -- ^ A global setting (not to be confused 
-                                        -- with process environment)
+data NsValue = UnionPoint UnionDir FilePath -- ^ A union point
+             | GlobalSetting String         -- ^ A global setting (not to be confused 
+                                            -- with process environment)
                deriving (Eq, Ord, Show)
 
 -- A datatype to represent a namespace key.
