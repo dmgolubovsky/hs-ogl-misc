@@ -147,11 +147,11 @@ eval_step dfid ("." : rawps) orig eval = eval_step dfid rawps orig eval
 
 eval_step dfid ("../" : rawps) orig eval = eval_step dfid (".." : rawps) orig eval
 
+eval_step dfid (".." : rawps) [orig] eval = eval_step dfid rawps [orig] eval
+
 eval_step dfid (".." : rawps) orig [eval] = do
   lift . devmsg (fst dfid) $ Tclunk (snd dfid)
   fail $ "eval: internal error: .. with singleton evaluated path at " ++ joinPath orig
-
-eval_step dfid (".." : rawps) [orig] eval = eval_step dfid rawps [orig] eval
 
 eval_step dfid (".." : rawps) orig eval = do
   let chop = reverse . tail . reverse                     -- chop the last element off
@@ -163,14 +163,9 @@ eval_step dfid (".." : rawps) orig eval = do
         _ -> evalp
   lift . devmsg (fst dfid) $ Tclunk (snd dfid)
   (ndev, nfid) <- attdev 2048 (head neval)
-  wfid <- newfid
-  let wp = tail neval
-  (Rwalk rwlk) <- lift . devmsg ndev $ Twalk nfid wfid wp
+  wfid <- walkdev (ndev, nfid) (tail neval)
   lift . devmsg ndev $ Tclunk nfid
-  case (length rwlk, length wp) of
-    (1, 0) -> eval_step (ndev, wfid) rawps origp neval
-    (x, y) | x == y -> eval_step (ndev, wfid) rawps origp neval
-    _ -> fail $ "eval: cannot walk up from " ++ joinPath orig
+  eval_step (ndev, wfid) rawps origp neval
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
 -- either single or multiple path). One of them may be the one we already have a FID for
@@ -184,8 +179,6 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
       jorig = joinPath orig
       nrawp = normalise (rawp ++ "/")
   undirs <- get >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
-  liftIO $ putStrLn $ show jorig
-  liftIO $ putStrLn $ show jeval
   ress@(rfp, rdev, rfid) <- foldr mplus (fail $ "eval: cannot walk " ++ (jeval </> nrawp)) $ 
     flip map undirs $ \fp -> do
       (zfp, zdev, zfid, zeval) <- case (fp == jeval) of
@@ -194,16 +187,9 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
           (xdev, xfid) <- attdev 2048 fp
           let tfp = tail (splitPath fp) ++ [nrawp]
           return (tfp, xdev, xfid, splitPath fp ++ [nrawp])
-      wfid <- newfid
-      (Rwalk rwlk) <- lift . devmsg zdev $ Twalk zfid wfid zfp
+      wfid <- walkdev (zdev, zfid) zfp
       lift . devmsg zdev $ Tclunk zfid
-      case (length rwlk, length zfp) of
-        (1, 0) -> return (zeval, zdev, wfid)
-        (x, y) | x == y -> return (zeval, zdev, wfid)
-        _ -> mzero
-
-  liftIO . putStrLn . show $ ress
-
+      return (zeval, zdev, wfid)
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
 
 -- Find the root entry in the namespace. The root entry is special that it always has
@@ -250,3 +236,20 @@ attdev bufsz fp = newfid >>= \fid -> lift $ do
   devmsg d $ Tversion bufsz "9P2000"
   devmsg d $ Tattach fid c_NOFID "" (treeOf fp)
   return (d, fid)
+
+-- Walk a device from the given DEVFID to the given split path. The function
+-- fails if the driver returns an error message as well as if the walk is incomplete.
+-- FID for the destination path is returned. The destination path is considered relative
+-- to the one source DEVFID is for. QIDs returned by the driver are lost, only their number
+-- is counted.
+
+walkdev :: DEVFID -> [FilePath] -> NameSpaceM FID
+
+walkdev (dev, ffid) fps = newfid >>= \tfid -> lift $ do
+  (Rwalk rwlk) <- devmsg dev $ Twalk ffid tfid fps
+  case (length rwlk, length fps) of
+    (1, 0) -> return tfid
+    (x, y) | x == y -> return tfid
+    _ -> fail $ "eval: cannot walk to " ++ joinPath fps
+ 
+
