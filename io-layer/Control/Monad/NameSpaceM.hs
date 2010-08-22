@@ -76,7 +76,22 @@ bindPath fl new old | old == "/" && isDevice new = do
 
 bindPath fl new old = bind_common fl new old
 
-bind_common fl new old = fail "unimplemented"
+-- The common case: create new or update an existing entry in the current namespace map
+-- storing the canonicalized and evaluated versions of the "old" path given, along with 
+-- evaluated version of the "new" path.
+
+bind_common fl new old = do
+  epnew <- evalPath new
+  epold <- evalPath old
+  ns <- get
+  let norm = normalise $ epCanon epold ++ "/"
+      uds = unionDir (epEval epold)
+      udx = addUnion uds (epEval epnew) fl
+      up = UnionPoint udx (epEval epold)
+      modx _ (UnionPoint ud fp) = UnionPoint (addUnion ud (epEval epnew) fl) fp
+      ns' = M.insertWith modx (NsPath norm) up ns
+  put ns'
+  return ()
 
 -- | Data type to represent an evaluated path. It is returned from the 'evalPath' function.
 

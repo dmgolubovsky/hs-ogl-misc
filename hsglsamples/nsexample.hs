@@ -13,15 +13,15 @@ import Control.Monad.State
 import System.IO9.Device hiding (get, put)
 import System.IO9.Devices.DevPosix
 
-rootdir = "/tmp/ns-root"
+rootdir = "/home/dima/ns-root"
 
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
-  createDirectoryIfMissing True rootdir
   startns $ do
     lift $ device 'Z' $ devPosix True rootdir
     bindPath BindRepl "#Z" "/"
+    bindPath (BindBefore True) "/m2" "/m1"
     evalPath dir >>= liftIO . putStrLn . show
     
 {-
