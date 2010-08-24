@@ -18,6 +18,9 @@ module Control.Monad.NineM (
  ,ThreadCompl (..)
  ,device
  ,DEVFID
+ ,ScopeR
+ ,enterScope
+ ,exitScope
  ,noDevice
  ,freshdev
  ,devmsg
@@ -40,6 +43,7 @@ import Control.Exception
 import Data.Char
 import Data.Maybe
 import qualified Data.IntMap as I
+import qualified Data.Set as S
 import qualified Data.Map as M
 
 -- The NineM monad is based on the StateT transformer. It operates at thread
@@ -47,21 +51,44 @@ import qualified Data.Map as M
 -- for thread management. Not much is exported from this module; most of data types remains
 -- opaque to this monad's "clients".
 
--- | A newtype wrapper for a device reference (just a number indeed). It is opaque
--- to the external code that uses this monad.
-
-newtype Device = Device {devRef :: Int}
-
-instance Show Device where
-  show d = "Device: #" ++ show (devRef d)
-
--- | Type synonym for a device-fid pair.
-
-type DEVFID = (Device, FID)
-
 -- | No-device.
 
 noDevice = Device (-1)
+
+-- | A class for values returned from a scope. These values must somehow refer to
+-- zero or more device-FID pairs. These pairs will be retained after the scope is exited,
+-- and added to the parent scope. By default, a value does not refer to anything.
+
+class ScopeR a where
+  retains :: a -> [DEVFID]
+  retains _ = []
+
+instance ScopeR ()
+
+-- | Enter a new scope. Thie function updates the scope reference in the thread state
+-- by creating a new empty scope and linking it to the current scope which becomes a parent.
+
+enterScope :: NineM u ()
+
+enterScope = do
+  s <- get
+  let n = Scope (Just $ currScope s) M.empty S.empty
+  put s {currScope = n}
+
+-- | Exit the scope and return whatever is retained to the parent scope, clunk
+-- anything else.
+
+exitScope :: [DEVFID] -> NineM u ()
+
+exitScope rtns = do
+  s <- get
+  let c = currScope s
+      r = S.fromList rtns
+      clunks = S.toList (fidSet c `S.difference` r)
+  forM_ clunks $ \(dev, fid) -> devmsg dev (Tclunk fid)
+  case pScope c of
+    Nothing -> return ()
+    Just p -> put s {currScope = p {fidSet = fidSet p `S.union` r}}
 
 -- Initialize thread state.
 
@@ -74,6 +101,7 @@ initState u tv = ThreadState 0
                              u
                              M.empty
                              tv
+                             (Scope Nothing M.empty S.empty)
 
 -- | Get a unique (thread-wise) integer number.
 

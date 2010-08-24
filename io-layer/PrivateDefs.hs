@@ -18,6 +18,9 @@ module PrivateDefs (
  ,ThreadCompl (..)
  ,NineM
  ,NameSpaceM
+ ,Scope (..)
+ ,Device (..)
+ ,DEVFID
 ) where 
 
 import System.IO9.Device
@@ -26,7 +29,20 @@ import Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM.TVar
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.IntMap as I
+
+-- | A newtype wrapper for a device reference (just a number indeed). It is opaque
+-- to the external code that uses this monad.
+
+newtype Device = Device {devRef :: Int} deriving (Eq, Ord)
+
+instance Show Device where
+  show d = "Device: #" ++ show (devRef d)
+
+-- | Type synonym for a device-fid pair.
+
+type DEVFID = (Device, FID)
 
 -- Internal structure of a thread state.
 
@@ -43,6 +59,7 @@ data ThreadState u = ThreadState {
                   (TVar (ThreadCompl u),     -- where thread completion result is stored,
                   (MVar ()))                 -- keyed by the GHC thread identifier from forkIO.
  ,parTVar :: TVar (ThreadCompl u)            -- parent's TVar to send notifications to.
+ ,currScope :: Scope                         -- current scope.
 }
 
 -- | A structure to store thread completion result. A thread may complete with
@@ -90,4 +107,15 @@ type NineM u a = StateT (ThreadState u) IO a
 
 type NameSpaceM a = StateT NameSpace (StateT (ThreadState NameSpace) IO) a
 
+-- The Scope data structure. It contains a link to the parent scope, a map of
+-- devices indexed by device letter and tree, and a set of DEVFID pairs.
+-- It is maintained throughout the thread lifetime, that only one device
+-- is attached per letter-tree pair. FIDs is what is tracked per scope.
+-- A function that runs inside scope may allocate some FIDs in open devices.
+
+data Scope = Scope {
+  pScope :: Maybe Scope                     -- parent scope
+ ,devLT :: M.Map (Char, FilePath) Device9P  -- letter-tree device map
+ ,fidSet :: S.Set (DEVFID)                  -- set of active DEVFIDs
+} deriving (Show)
 
