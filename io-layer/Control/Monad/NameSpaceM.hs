@@ -23,6 +23,7 @@ module Control.Monad.NameSpaceM (
  ,unionDir
  ,UnionDir (..)
  ,BoundDir (..)
+ ,runScope
 ) where
 
 import PrivateDefs
@@ -38,6 +39,7 @@ import System.Directory
 import System.IO9.Device hiding (get, put)
 import System.IO9.NameSpace.Pure
 import qualified Data.Map as M
+import qualified Control.Exception as E
 
 -- | Run the "main" program in the NameSpace monad. The main program always starts
 -- with an empty namespace. Any changes in the namespace will be saved post-completion
@@ -80,7 +82,7 @@ bindPath fl new old = bind_common fl new old
 -- storing the canonicalized and evaluated versions of the "old" path given, along with 
 -- evaluated version of the "new" path.
 
-bind_common fl new old = do
+bind_common fl new old = runScope $ do
   epnew <- evalPath new
   epold <- evalPath old
   ns <- get
@@ -102,6 +104,9 @@ data EvalPath = EvalPath {
  ,epEval :: FilePath                          -- ^ Evaluated (starting at the device) path
 } deriving (Show)
 
+instance ScopeR EvalPath where
+  retains (EvalPath d f _ _) = [(d, f)]
+
 -- | Evaluate a file path (absolute or device) using the current namespace. The function will try
 -- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
 -- of the path off. If successful, FID of the last path component is returned. Otherwise
@@ -112,7 +117,7 @@ evalPath :: FilePath -> NameSpaceM EvalPath
 evalPath fp | not (isAbsolute fp || isDevice fp) =
   fail "eval: path should be absolute"
 
-evalPath fp = do
+evalPath fp = runScope $ do
   (d, c, e) <- eval_root (splitPath fp) []
   return $ EvalPath (fst d) (snd d) (joinPath c) (joinPath e)
 
@@ -206,6 +211,21 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
       lift . devmsg zdev $ Tclunk zfid
       return (zeval, zdev, wfid)
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
+
+-- | Run a NameSpaced action in a scope. Whatever is returned, retains some or none 
+-- DEVFIDs for the parent scope.
+
+runScope :: (ScopeR r) => NameSpaceM r -> NameSpaceM r
+
+runScope x = do
+  s <- get
+  (r', s') <- lift $ do
+    enterScope
+    (xr, xs) <- runStateT x s `catchSome` (\e -> exitScope [] >> liftIO (putStrLn "caught") >> E.throw e)
+    exitScope (retains xr)
+    return (xr, xs)
+  put s'
+  return r'  
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple

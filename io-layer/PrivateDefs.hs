@@ -115,7 +115,7 @@ type NameSpaceM a = StateT NameSpace (StateT (ThreadState NameSpace) IO) a
 
 data Scope = Scope {
   pScope :: Maybe Scope                     -- parent scope
- ,devLT :: M.Map (Char, FilePath) Device9P  -- letter-tree device map
+ ,devLT :: M.Map (Char, FilePath) Device    -- letter-tree device map
  ,fidSet :: S.Set (DEVFID)                  -- set of active DEVFIDs
 } deriving (Show)
 

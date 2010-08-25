@@ -18,7 +18,7 @@ module Control.Monad.NineM (
  ,ThreadCompl (..)
  ,device
  ,DEVFID
- ,ScopeR
+ ,ScopeR (..)
  ,enterScope
  ,exitScope
  ,noDevice
@@ -28,6 +28,7 @@ module Control.Monad.NineM (
  ,startup
  ,spawn
  ,wait
+ ,catchSome
 ) where
 
 import PrivateDefs
@@ -64,6 +65,9 @@ class ScopeR a where
   retains _ = []
 
 instance ScopeR ()
+
+instance ScopeR DEVFID where
+  retains a = [a]
 
 -- | Enter a new scope. Thie function updates the scope reference in the thread state
 -- by creating a new empty scope and linking it to the current scope which becomes a parent.
@@ -214,7 +218,9 @@ notifyParent :: TVar (ThreadCompl u) -> ThreadCompl u -> NineM u ()
 
 notifyParent tv tc = liftIO $ atomically (writeTVar tv tc) >> return ()  
 
--- Utility: catch SomeException inside a StateT transformer.
+-- | Catch SomeException inside a StateT transformer.
+
+catchSome :: StateT s IO a -> (SomeException -> StateT s IO a) -> StateT s IO a
     
 m `catchSome` h = StateT $ \s -> runStateT m s 
    `catch`  \(e :: SomeException) -> runStateT (h e) s
