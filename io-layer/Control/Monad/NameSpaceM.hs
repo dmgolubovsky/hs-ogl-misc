@@ -23,7 +23,7 @@ module Control.Monad.NameSpaceM (
  ,unionDir
  ,UnionDir (..)
  ,BoundDir (..)
- ,runScope
+ ,liftScope
 ) where
 
 import PrivateDefs
@@ -82,7 +82,7 @@ bindPath fl new old = bind_common fl new old
 -- storing the canonicalized and evaluated versions of the "old" path given, along with 
 -- evaluated version of the "new" path.
 
-bind_common fl new old = runScope $ do
+bind_common fl new old = liftScope $ do
   epnew <- evalPath new
   epold <- evalPath old
   ns <- get
@@ -117,7 +117,7 @@ evalPath :: FilePath -> NameSpaceM EvalPath
 evalPath fp | not (isAbsolute fp || isDevice fp) =
   fail "eval: path should be absolute"
 
-evalPath fp = runScope $ do
+evalPath fp = liftScope $ do
   (d, c, e) <- eval_root (splitPath fp) []
   return $ EvalPath (fst d) (snd d) (joinPath c) (joinPath e)
 
@@ -213,15 +213,16 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
 
 -- | Run a NameSpaced action in a scope. Whatever is returned, retains some or none 
--- DEVFIDs for the parent scope.
+-- DEVFIDs for the parent scope. Simple 'lift' would not work here as proper manipulation
+-- of namespace state is required.
 
-runScope :: (ScopeR r) => NameSpaceM r -> NameSpaceM r
+liftScope :: (ScopeR r) => NameSpaceM r -> NameSpaceM r
 
-runScope x = do
+liftScope x = do
   s <- get
   (r', s') <- lift $ do
     enterScope
-    (xr, xs) <- runStateT x s `catchSome` (\e -> exitScope [] >> liftIO (putStrLn "caught") >> E.throw e)
+    (xr, xs) <- runStateT x s `catchSome` (\e -> exitScope [] >> E.throw e)
     exitScope (retains xr)
     return (xr, xs)
   put s'

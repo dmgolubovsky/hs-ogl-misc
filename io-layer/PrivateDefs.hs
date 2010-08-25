@@ -59,6 +59,7 @@ data ThreadState u = ThreadState {
                   (TVar (ThreadCompl u),     -- where thread completion result is stored,
                   (MVar ()))                 -- keyed by the GHC thread identifier from forkIO.
  ,parTVar :: TVar (ThreadCompl u)            -- parent's TVar to send notifications to.
+ ,devLT :: M.Map (Char, FilePath) Device     -- letter-tree device map
  ,currScope :: Scope                         -- current scope.
 }
 
@@ -107,15 +108,14 @@ type NineM u a = StateT (ThreadState u) IO a
 
 type NameSpaceM a = StateT NameSpace (StateT (ThreadState NameSpace) IO) a
 
--- The Scope data structure. It contains a link to the parent scope, a map of
--- devices indexed by device letter and tree, and a set of DEVFID pairs.
+-- The Scope data structure. It contains a link to the parent scope, and 
+-- a set of active DEVFID pairs.
 -- It is maintained throughout the thread lifetime, that only one device
 -- is attached per letter-tree pair. FIDs is what is tracked per scope.
 -- A function that runs inside scope may allocate some FIDs in open devices.
 
 data Scope = Scope {
   pScope :: Maybe Scope                     -- parent scope
- ,devLT :: M.Map (Char, FilePath) Device    -- letter-tree device map
  ,fidSet :: S.Set (DEVFID)                  -- set of active DEVFIDs
 } deriving (Show)
 

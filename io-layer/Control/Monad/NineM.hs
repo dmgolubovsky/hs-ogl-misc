@@ -21,6 +21,7 @@ module Control.Monad.NineM (
  ,ScopeR (..)
  ,enterScope
  ,exitScope
+ ,runScope
  ,noDevice
  ,freshdev
  ,devmsg
@@ -46,6 +47,7 @@ import Data.Maybe
 import qualified Data.IntMap as I
 import qualified Data.Set as S
 import qualified Data.Map as M
+import qualified Control.Exception as E
 
 -- The NineM monad is based on the StateT transformer. It operates at thread
 -- level, and provides convenient wrappers for 9P2000 operations as well as functions
@@ -76,7 +78,7 @@ enterScope :: NineM u ()
 
 enterScope = do
   s <- get
-  let n = Scope (Just $ currScope s) M.empty S.empty
+  let n = Scope (Just $ currScope s) S.empty
   put s {currScope = n}
 
 -- | Exit the scope and return whatever is retained to the parent scope, clunk
@@ -94,6 +96,17 @@ exitScope rtns = do
     Nothing -> return ()
     Just p -> put s {currScope = p {fidSet = fidSet p `S.union` r}}
 
+-- | Run a device I/O action in a scope. Whatever is returned, retains some or none 
+-- DEVFIDs for the parent scope.
+
+runScope :: (ScopeR r) => NineM u r -> NineM u r
+
+runScope x = do
+  enterScope
+  xr <- x `catchSome` (\e -> exitScope [] >> E.throw e)
+  exitScope (retains xr)
+  return xr
+ 
 -- Initialize thread state.
 
 initState :: u -> TVar (ThreadCompl u) -> ThreadState u
@@ -105,7 +118,8 @@ initState u tv = ThreadState 0
                              u
                              M.empty
                              tv
-                             (Scope Nothing M.empty S.empty)
+                             M.empty
+                             (Scope Nothing S.empty)
 
 -- | Get a unique (thread-wise) integer number.
 
