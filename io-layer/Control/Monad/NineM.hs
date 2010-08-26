@@ -24,6 +24,7 @@ module Control.Monad.NineM (
  ,runScope
  ,noDevice
  ,freshdev
+ ,getdev
  ,devmsg
  ,nextInt
  ,startup
@@ -182,6 +183,36 @@ freshdev dc = do
       let dm' = I.insert di (dev, dc) (devMap s)
       put s {devMap = dm'}
       return $ Device di
+
+-- | Get a device for the given letter and tree. If such a device had been attached before,
+-- use it. Otherwise allocate a fresh device, execute the optional authentication code,
+-- and return it. This function operates in a scope and retains a DEVFID for its parent scope.
+-- The FID for the root of device's tree though, is not added to the current scope and thus 
+-- preserved from being clunked. It is saved in 'devLT' member of the thread state.
+-- The authentication function has to perform the complete exchange with the device
+-- to authorize access to the given root of the selected tree. It is expected to return
+-- a FID that belongs to the device root. This FID will be dropped from the current
+-- scope's 'fidSet' even if it was added to it to become permanent through the remainder
+-- of the thread lifetime.
+
+getdev :: Char -> FilePath -> (Device -> FilePath -> NineM u FID) -> NineM u DEVFID
+
+getdev dc fp auth = runScope $ do
+  mbd <- get >>= return . M.lookup (dc, fp) . devLT
+  (rd, rf) <- case mbd of
+                Just df -> return df
+                Nothing -> do
+                  d <- freshdev dc
+                  f <- auth d fp
+                  s <- get
+                  let c = currScope s
+                      fid = (d, f)
+                  put s {currScope = c {fidSet = S.delete fid (fidSet c)}
+                        ,devLT = M.insert (dc, fp) fid (devLT s)}
+                  return fid
+  nf <- nextInt >>= return . fromIntegral
+  devmsg rd $ Twalk rf nf []
+  return (rd, nf)
 
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
 -- even when an error response is returned. In case of a error response, the function fails

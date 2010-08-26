@@ -59,7 +59,7 @@ data ThreadState u = ThreadState {
                   (TVar (ThreadCompl u),     -- where thread completion result is stored,
                   (MVar ()))                 -- keyed by the GHC thread identifier from forkIO.
  ,parTVar :: TVar (ThreadCompl u)            -- parent's TVar to send notifications to.
- ,devLT :: M.Map (Char, FilePath) Device     -- letter-tree device map
+ ,devLT :: M.Map (Char, FilePath) DEVFID     -- letter-tree device map
  ,currScope :: Scope                         -- current scope.
 }
 
