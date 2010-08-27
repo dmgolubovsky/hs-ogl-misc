@@ -306,12 +306,14 @@ startup u x = do
 
 -- | Spawn a new thread given the entry point. The thread will inherit its parent's state.
 -- Devices will remain attached, however device drivers may reject messages from the child
--- thread. User state will also be inherited.
+-- thread. User state will also be inherited. The spawn function may only be called from
+-- the toplevel scope.
 
 spawn :: NineM u () -> NineM u ThreadId
 
 spawn thr = do
   s <- get
+  when (isJust $ pScope (currScope s)) $ fail "spawn: called from a nested scope"
   tv <- liftIO . atomically $ newTVar ThreadStarted
   mv <- liftIO newEmptyMVar
   let s' = s {thrMap = M.empty
