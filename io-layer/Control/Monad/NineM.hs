@@ -23,7 +23,6 @@ module Control.Monad.NineM (
  ,exitScope
  ,runScope
  ,noDevice
- ,freshdev
  ,getdev
  ,devmsg
  ,nextInt
@@ -93,9 +92,10 @@ exitScope rtns = do
       r = S.fromList rtns
       clunks = S.toList (fidSet c `S.difference` r)
   forM_ clunks $ \(dev, fid) -> devmsg dev (Tclunk fid)
+  ss <- get
   case pScope c of
     Nothing -> return ()
-    Just p -> put s {currScope = p {fidSet = fidSet p `S.union` r}}
+    Just p -> put ss {currScope = p {fidSet = fidSet p `S.union` r}}
 
 -- | Run a device I/O action in a scope. Whatever is returned, retains some or none 
 -- DEVFIDs for the parent scope.
@@ -197,6 +197,8 @@ freshdev dc = do
 
 getdev :: Char -> FilePath -> (Device -> FilePath -> NineM u FID) -> NineM u DEVFID
 
+getdev dc "" auth = getdev dc "/" auth
+
 getdev dc fp auth = runScope $ do
   mbd <- get >>= return . M.lookup (dc, fp) . devLT
   (rd, rf) <- case mbd of
@@ -284,8 +286,10 @@ cleanUp :: NineM u ()
 
 cleanUp = do
   s <- get
-  mapM_ (flip devmsg (Tclunk c_NOFID) . Device) (I.keys $ devMap s)
-  liftIO $ mapM_ killThread (M.keys $ thrMap s)
+  let devs = I.keys $ devMap s
+      thrs = M.keys $ thrMap s
+  mapM_ (flip devmsg (Tclunk c_NOFID) . Device) devs
+  liftIO $ mapM_ killThread thrs
   
 
 -- | Run the "main" program. This is the only entry point into this monad visible

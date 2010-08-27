@@ -48,7 +48,7 @@ import qualified Control.Exception as E
 startns :: NameSpaceM () -> IO ()
 
 startns x = let nns = newNameSpace in startup nns $ do
-  u <- execStateT x nns
+  u <- execStateT (liftScope x) nns
   s <- get
   put s {userState = u}
   return ()
@@ -170,7 +170,6 @@ eval_step dfid ("../" : rawps) orig eval = eval_step dfid (".." : rawps) orig ev
 eval_step dfid (".." : rawps) [orig] eval = eval_step dfid rawps [orig] eval
 
 eval_step dfid (".." : rawps) orig [eval] = do
-  lift . devmsg (fst dfid) $ Tclunk (snd dfid)
   fail $ "eval: internal error: .. with singleton evaluated path at " ++ joinPath orig
 
 eval_step dfid (".." : rawps) orig eval = do
@@ -181,10 +180,8 @@ eval_step dfid (".." : rawps) orig eval = do
   let neval = case up of
         Just (UnionPoint _ fp) -> splitPath fp
         _ -> evalp
-  lift . devmsg (fst dfid) $ Tclunk (snd dfid)
   (ndev, nfid) <- attdev 2048 (head neval)
-  wfid <- walkdev (ndev, nfid) (tail neval)
-  lift . devmsg ndev $ Tclunk nfid
+  (_, wfid) <- walkdev (ndev, nfid) (tail neval)
   eval_step (ndev, wfid) rawps origp neval
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
@@ -207,8 +204,7 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
           (xdev, xfid) <- attdev 2048 fp
           let tfp = tail (splitPath fp) ++ [nrawp]
           return (tfp, xdev, xfid, splitPath fp ++ [nrawp])
-      wfid <- walkdev (zdev, zfid) zfp
-      lift . devmsg zdev $ Tclunk zfid
+      (_, wfid) <- walkdev (zdev, zfid) zfp
       return (zeval, zdev, wfid)
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
 
@@ -267,11 +263,12 @@ attdev :: Word32 -> FilePath -> NameSpaceM DEVFID
 
 attdev _ fp | not (isDevice fp) = return (noDevice, c_NOFID)
 
-attdev bufsz fp = newfid >>= \fid -> lift $ do
-  d <- freshdev (deviceOf fp)
+attdev bufsz fp = lift . getdev (deviceOf fp) (treeOf fp) $ \d t -> do
+  f <- nextInt >>= return . fromIntegral
   devmsg d $ Tversion bufsz "9P2000"
-  devmsg d $ Tattach fid c_NOFID "" (treeOf fp)
-  return (d, fid)
+  devmsg d $ Tattach f c_NOFID "" t
+  return f
+  
 
 -- Walk a device from the given DEVFID to the given split path. The function
 -- fails if the driver returns an error message as well as if the walk is incomplete.
@@ -279,13 +276,13 @@ attdev bufsz fp = newfid >>= \fid -> lift $ do
 -- to the one source DEVFID is for. QIDs returned by the driver are lost, only their number
 -- is counted.
 
-walkdev :: DEVFID -> [FilePath] -> NameSpaceM FID
+walkdev :: DEVFID -> [FilePath] -> NameSpaceM DEVFID
 
-walkdev (dev, ffid) fps = newfid >>= \tfid -> lift $ do
+walkdev (dev, ffid) fps = liftScope $ newfid >>= \tfid -> lift $ do
   (Rwalk rwlk) <- devmsg dev $ Twalk ffid tfid fps
   case (length rwlk, length fps) of
-    (1, 0) -> return tfid
-    (x, y) | x == y -> return tfid
+    (1, 0) -> return (dev, tfid)
+    (x, y) | x == y -> return (dev, tfid)
     _ -> fail $ "eval: cannot walk to " ++ joinPath fps
  
 
