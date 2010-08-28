@@ -48,7 +48,7 @@ import qualified Control.Exception as E
 startns :: NameSpaceM () -> IO ()
 
 startns x = let nns = newNameSpace in startup nns $ do
-  u <- execStateT (liftScope x) nns
+  u <- execStateT x nns
   s <- get
   put s {userState = u}
   return ()
@@ -181,7 +181,7 @@ eval_step dfid (".." : rawps) orig eval = do
         Just (UnionPoint _ fp) -> splitPath fp
         _ -> evalp
   (ndev, nfid) <- attdev 2048 (head neval)
-  (_, wfid) <- walkdev (ndev, nfid) (tail neval)
+  (_, wfid) <- lift $ walkdev (ndev, nfid) (tail neval)
   eval_step (ndev, wfid) rawps origp neval
 
 -- General case. Look up the already evaluated path in the namespace (resulting in
@@ -204,7 +204,7 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
           (xdev, xfid) <- attdev 2048 fp
           let tfp = tail (splitPath fp) ++ [nrawp]
           return (tfp, xdev, xfid, splitPath fp ++ [nrawp])
-      (_, wfid) <- walkdev (zdev, zfid) zfp
+      (_, wfid) <- lift $ walkdev (zdev, zfid) zfp
       return (zeval, zdev, wfid)
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
 
@@ -250,12 +250,6 @@ findunion fp ns = do
     Just (UnionPoint ud fp) -> return . map dirfp . DL.toList $ unDir ud 
     _ -> return []
 
--- New number for a FID: just lifted from the underlying monad.
-
-newfid :: NameSpaceM FID
-
-newfid = lift nextInt >>= return . fromIntegral
-
 -- Attach a device with given letter and tree, get DEVFID for the device/tree.
 -- Username is always blank, and authorization is not requested.
 
@@ -270,19 +264,5 @@ attdev bufsz fp = lift . getdev (deviceOf fp) (treeOf fp) $ \d t -> do
   return f
   
 
--- Walk a device from the given DEVFID to the given split path. The function
--- fails if the driver returns an error message as well as if the walk is incomplete.
--- FID for the destination path is returned. The destination path is considered relative
--- to the one source DEVFID is for. QIDs returned by the driver are lost, only their number
--- is counted.
 
-walkdev :: DEVFID -> [FilePath] -> NameSpaceM DEVFID
-
-walkdev (dev, ffid) fps = liftScope $ newfid >>= \tfid -> lift $ do
-  (Rwalk rwlk) <- devmsg dev $ Twalk ffid tfid fps
-  case (length rwlk, length fps) of
-    (1, 0) -> return (dev, tfid)
-    (x, y) | x == y -> return (dev, tfid)
-    _ -> fail $ "eval: cannot walk to " ++ joinPath fps
- 
 

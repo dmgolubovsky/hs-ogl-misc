@@ -24,6 +24,7 @@ module Control.Monad.NineM (
  ,runScope
  ,noDevice
  ,getdev
+ ,walkdev
  ,devmsg
  ,nextInt
  ,startup
@@ -34,6 +35,7 @@ module Control.Monad.NineM (
 
 import PrivateDefs
 import Prelude hiding (catch)
+import System.FilePath
 import System.IO9.Device hiding (get, put)
 import Control.Monad
 import Control.Concurrent
@@ -216,6 +218,21 @@ getdev dc fp auth = runScope $ do
   devmsg rd $ Twalk rf nf []
   return (rd, nf)
 
+-- Walk a device from the given DEVFID to the given split path. The function
+-- fails if the driver returns an error message as well as if the walk is incomplete.
+-- FID for the destination path is returned. The destination path is considered relative
+-- to the one source DEVFID is for. QIDs returned by the driver are lost, only their number
+-- is counted.
+
+walkdev :: DEVFID -> [FilePath] -> NineM u DEVFID
+
+walkdev (dev, ffid) fps = runScope $ nextInt >>= return . fromIntegral >>= \tfid -> do
+  (Rwalk rwlk) <- devmsg dev $ Twalk ffid tfid fps
+  case (length rwlk, length fps) of
+    (1, 0) -> return (dev, tfid)
+    (x, y) | x == y -> return (dev, tfid)
+    _ -> fail $ "eval: cannot walk to " ++ joinPath fps
+ 
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
 -- even when an error response is returned. In case of a error response, the function fails
 -- with the string provided with the error message. Otherwise response is returned.
