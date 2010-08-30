@@ -22,7 +22,10 @@ main = do
     lift $ device 'Z' $ devPosix True rootdir
     bindPath BindRepl "#Z" "/"
     bindPath (BindBefore True) "/m2" "/m1"
-    evalPath dir >>= liftIO . putStrLn . show
+    e <- evalPath dir
+    liftIO . putStrLn . show $ e
+    s <- lift $ statfid (epDev e, epFID e)
+    liftIO . putStrLn . show $ s
     
 {-
     device 'Z' $ devPosix True rootdir

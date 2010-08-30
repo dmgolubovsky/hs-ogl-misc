@@ -21,6 +21,7 @@ import Data.Word
 import Data.Bits
 import Data.List
 import Data.Maybe
+import Data.Either.Unwrap
 import System.FilePath
 import System.Directory
 import System.IO9.Device
@@ -30,6 +31,7 @@ import System.Posix.User
 import System.Posix.IO
 import Control.Monad
 import Control.Concurrent
+import qualified Control.Exception as E
 import qualified Data.Map as M
 
 -- | Initialization of the device. The function returns a thunk holding a host
@@ -53,7 +55,7 @@ devPosix shr fp = do
 data DevPosix = DevPosix {
   hfp :: FilePath                              -- root of the host file path
  ,fidmap :: M.Map Word32 FilePath              -- map of FIDs to actual paths
- ,openmap :: M.Map Word32 (Word8, Maybe Fd)    -- map of FIDs currently open
+ ,openmap :: M.Map Word32 (Word8, Either Fd [FilePath]) -- map of FIDs currently open
  ,uname :: String                              -- name of the (authenticated) user
  ,thrid :: Maybe ThreadId                      -- ID of the thread that attached
  ,devshr :: Bool                               -- Device connection can be shared
@@ -191,8 +193,29 @@ dpacc devd msg = do
               (_, 1) -> emsg "first path element cannot be walked"
               (m, n) | n == m + 1 -> rwalk (tail res) (devd {fidmap = fidmap'})
               _ -> rwalk (tail res) devd
-              
-              
+      (TTopen, Topen ofid omode) -> do -- for directory, just store its contents
+        let opath = M.lookup ofid $ fidmap devd
+        case opath of
+          Nothing -> emsg $ "Incorrect fid: " ++ show ofid
+          Just ofp -> do
+            ex <- fileExist ofp     -- file could have disappeared
+            case ex of
+              False -> emsg $ "File/directory does not exist: " ++ ofp
+              True -> do
+                let dot "." = True
+                    dot ".." = True
+                    dot _ = False
+                st <- getFileStatus ofp
+                oval <- if isDirectory st
+                          then getDirectoryContents ofp >>= 
+                               return . filter (not . dot) >>= 
+                               return . Right
+                          else openFd ofp (mod2mod $ omode .&. 3) Nothing (mod2flg omode) >>=
+                               return . Left
+                let openmap' = M.insert ofid (omode, oval) (openmap devd)
+                    oqid = stat2qid st
+                    devd' = devd {openmap = openmap'}
+                return $ Resp9P msg {msg_typ = TRopen, msg_body = Ropen oqid 0} (dpacc devd')
       _ -> emsg $ "Incorrect message " ++ show msg
 
 -- Clunk one fid, update the internal data as needed.
@@ -204,11 +227,11 @@ clunk devd clfid = do
       clpath = M.lookup clfid $ fidmap devd
       (rm, cl) = case clmode of
         Nothing -> (False, False)
-        Just (m, mbfd) -> ((m .&. c_ORCLOSE) /= 0, isJust mbfd)
+        Just (m, mbfd) -> ((m .&. c_ORCLOSE) /= 0, isLeft mbfd)
       openmap' = M.delete clfid $ openmap devd
       fidmap' = M.delete clfid $ fidmap devd
       devd' = devd {openmap = openmap', fidmap = fidmap'}
-  when cl $ closeFd (fromJust . snd . fromJust $ clmode)
+  when cl $ closeFd (fromLeft . snd . fromJust $ clmode)
   when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
   return devd'
 
@@ -233,7 +256,21 @@ walk root base fps fpqs = do
         fph:fpt -> walk root (nbase' </> fph) fpt nxt
       
       
-  
+-- Convert a 9P2000 open mode to Posix open mode.  
+
+mod2mod :: Word8 -> OpenMode
+
+mod2mod omode | omode == c_OREAD = ReadOnly
+              | omode == c_OWRITE = WriteOnly
+              | omode == c_ORDWR = ReadWrite
+              | otherwise = error $ "Incorrect open mode: " ++ show omode
+
+-- Convert a 9P2000 open mode to Posix open flags (in fact only O_TRUNC is affected).
+
+mod2flg :: Word8 -> OpenFileFlags
+
+mod2flg omode | (omode .&. c_OTRUNC) /= 0 = defaultFileFlags {trunc = True}
+              | otherwise = defaultFileFlags
 
 -- Check that the path2 is a subdirectory of path1 (or equal to path1).
 
@@ -289,8 +326,10 @@ stat2mode st =
 stat2stat :: FileStatus -> FilePath -> IO Stat
 
 stat2stat st fname = do
-  funame <- getUserEntryForID (fileOwner st) >>= return . userName
-  fgroup <- getGroupEntryForID (fileGroup st) >>= return . groupName
+  funame <- (getUserEntryForID (fileOwner st) >>= return . userName) `catch`
+              (\_ -> return . show $ fileOwner st)
+  fgroup <- (getGroupEntryForID (fileGroup st) >>= return . groupName) `catch`
+              (\_ -> return . show $ fileGroup st)
   let qid = stat2qid st
       mode = stat2mode st
       ret = Stat {

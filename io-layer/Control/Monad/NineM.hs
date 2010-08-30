@@ -25,6 +25,7 @@ module Control.Monad.NineM (
  ,noDevice
  ,getdev
  ,walkdev
+ ,statfid
  ,devmsg
  ,nextInt
  ,startup
@@ -232,6 +233,15 @@ walkdev (dev, ffid) fps = runScope $ nextInt >>= return . fromIntegral >>= \tfid
     (1, 0) -> return (dev, tfid)
     (x, y) | x == y -> return (dev, tfid)
     _ -> fail $ "eval: cannot walk to " ++ joinPath fps
+
+-- | Obtain a 'Stat' structure for a given device/fid.
+
+statfid :: DEVFID -> NineM u Stat
+
+statfid (dev, fid) = do
+   (Rstat r) <- devmsg dev $ Tstat fid
+   return $ head r                -- NB to be changed once the NineP module is updated.
+    
  
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
 -- even when an error response is returned. In case of a error response, the function fails
