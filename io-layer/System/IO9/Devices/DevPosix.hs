@@ -29,8 +29,10 @@ import System.Posix.Types
 import System.Posix.Files
 import System.Posix.User
 import System.Posix.IO
+import GHC.IO.Device
 import Control.Monad
 import Control.Concurrent
+import qualified Data.ByteString.Lazy as B
 import qualified Control.Exception as E
 import qualified Data.Map as M
 
@@ -216,7 +218,25 @@ dpacc devd msg = do
                     oqid = stat2qid st
                     devd' = devd {openmap = openmap'}
                 return $ Resp9P msg {msg_typ = TRopen, msg_body = Ropen oqid 0} (dpacc devd')
+      (TTread, Tread rfid roff rcnt) -> do -- directory contents always reads entirely
+        let rpath = M.lookup rfid $ fidmap devd
+            rval = M.lookup rfid $ openmap devd
+            rread b = return $ Resp9P (msg {msg_typ = TRread, msg_body = Rread b}) (dpacc devd)
+        case rpath of
+          Nothing -> emsg $ "Incorrect fid: " ++ show rfid
+          Just rfp -> do
+            ex <- fileExist rfp     -- file could have disappeared
+            case ex of
+              False -> emsg $ "File/directory does not exist: " ++ rfp
+              True -> case rval of
+                Nothing -> emsg $ "Fid " ++ show rfid ++ " was not open"
+                Just (m, Left fd) | m .&. 3 /= c_OWRITE -> do
+                  fdSeek fd AbsoluteSeek (fromIntegral roff)
+                  h <- fdToHandle fd
+                  B.hGet h (fromIntegral rcnt) >>= rread
+                _ -> emsg $ "Incorrect fid mode: " ++ show rfid 
       _ -> emsg $ "Incorrect message " ++ show msg
+
 
 -- Clunk one fid, update the internal data as needed.
 
