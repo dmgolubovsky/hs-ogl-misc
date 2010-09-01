@@ -26,6 +26,9 @@ main = do
     liftIO . putStrLn . show $ e
     s <- lift $ statfid (epDev e, epFID e)
     liftIO . putStrLn . show $ s
+    lift $ devmsg (epDev e) $ Topen (epFID e) c_OREAD
+    r <- lift $ devmsg (epDev e) $ Tread (epFID e) 0 1000
+    liftIO $ putStrLn $ show r
     
 {-
     device 'Z' $ devPosix True rootdir

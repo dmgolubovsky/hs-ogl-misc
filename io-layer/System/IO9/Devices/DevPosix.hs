@@ -21,6 +21,8 @@ import Data.Word
 import Data.Bits
 import Data.List
 import Data.Maybe
+import Data.Binary.Put
+import Data.Binary.Get
 import Data.Either.Unwrap
 import System.FilePath
 import System.Directory
@@ -29,6 +31,7 @@ import System.Posix.Types
 import System.Posix.Files
 import System.Posix.User
 import System.Posix.IO
+import System.IO
 import GHC.IO.Device
 import Control.Monad
 import Control.Concurrent
@@ -57,7 +60,7 @@ devPosix shr fp = do
 data DevPosix = DevPosix {
   hfp :: FilePath                              -- root of the host file path
  ,fidmap :: M.Map Word32 FilePath              -- map of FIDs to actual paths
- ,openmap :: M.Map Word32 (Word8, Either Fd [FilePath]) -- map of FIDs currently open
+ ,openmap :: M.Map Word32 (Word8, Either Handle [FilePath]) -- map of FIDs currently open
  ,uname :: String                              -- name of the (authenticated) user
  ,thrid :: Maybe ThreadId                      -- ID of the thread that attached
  ,devshr :: Bool                               -- Device connection can be shared
@@ -213,6 +216,7 @@ dpacc devd msg = do
                                return . filter (not . dot) >>= 
                                return . Right
                           else openFd ofp (mod2mod $ omode .&. 3) Nothing (mod2flg omode) >>=
+                               fdToHandle >>=
                                return . Left
                 let openmap' = M.insert ofid (omode, oval) (openmap devd)
                     oqid = stat2qid st
@@ -230,10 +234,18 @@ dpacc devd msg = do
               False -> emsg $ "File/directory does not exist: " ++ rfp
               True -> case rval of
                 Nothing -> emsg $ "Fid " ++ show rfid ++ " was not open"
-                Just (m, Left fd) | m .&. 3 /= c_OWRITE -> do
-                  fdSeek fd AbsoluteSeek (fromIntegral roff)
-                  h <- fdToHandle fd
+                Just (m, Left h) | m .&. 3 /= c_OWRITE -> do
+                  hSeek h AbsoluteSeek (fromIntegral roff)
                   B.hGet h (fromIntegral rcnt) >>= rread
+                Just (m, Right fps) | m .&. 3 == c_OREAD && roff == 0 -> do
+                  let rfps = map (rfp </>) fps
+                      fstz f = (getFileStatus f >>= \s -> return [(s, f)]) `catch` 
+                                 (\_ -> return [])
+                  sts <- mapM fstz rfps >>= return . concat
+                  nsts <- zipWithM stat2stat (map fst sts) (map snd sts)
+                  let bs = map (runPut . put) nsts -- get Stat for each file
+                      cbs = B.concat bs            -- serialize each Stat and concat
+                  rread cbs                        -- send whatever results from concatenation
                 _ -> emsg $ "Incorrect fid mode: " ++ show rfid 
       _ -> emsg $ "Incorrect message " ++ show msg
 
@@ -251,7 +263,7 @@ clunk devd clfid = do
       openmap' = M.delete clfid $ openmap devd
       fidmap' = M.delete clfid $ fidmap devd
       devd' = devd {openmap = openmap', fidmap = fidmap'}
-  when cl $ closeFd (fromLeft . snd . fromJust $ clmode)
+  when cl $ hClose (fromLeft . snd . fromJust $ clmode)
   when (rm && isJust clpath && fromJust clpath /= hfp devd) $ removeLink (fromJust clpath)
   return devd'
 
@@ -366,3 +378,6 @@ stat2stat st fname = do
        ,st_muid = funame
       }
   return ret
+
+
+
