@@ -26,6 +26,7 @@ module Control.Monad.NineM (
  ,getdev
  ,walkdev
  ,statfid
+ ,readdir
  ,devmsg
  ,nextInt
  ,startup
@@ -45,12 +46,16 @@ import Control.Monad.Trans
 import Control.Monad.State
 import Control.Monad.Error
 import Control.Exception
+import Data.Int
 import Data.Char
 import Data.Maybe
+import Data.Binary.Get
+import qualified Data.ByteString.Lazy as B
 import qualified Data.IntMap as I
 import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Control.Exception as E
+import qualified System.IO9.Device as D
 
 -- The NineM monad is based on the StateT transformer. It operates at thread
 -- level, and provides convenient wrappers for 9P2000 operations as well as functions
@@ -242,7 +247,30 @@ statfid (dev, fid) = do
    (Rstat r) <- devmsg dev $ Tstat fid
    return $ head r                -- NB to be changed once the NineP module is updated.
     
+
+-- | Read contents of a directory as a list of 'Stat' structures. This function sends a
+-- read message using given device and FID. The returned 'ByteString' will be parsed as
+-- a sequence of encoded status structures. If decoding fails, whatever was decoded is returned.
+-- The FID should be open before 'readdir' can be used on it.
  
+readdir :: DEVFID -> NineM u [Stat]
+
+readdir (dev, fid) = do
+  (Rread r) <- devmsg dev $ Tread fid 0 9999
+  return $ runGet (many D.get) r
+
+many :: Get a -> Get [a]
+
+many prs = many' [] where 
+  many' a = do
+    s <- prs
+    r <- isEmpty
+    case r of
+      True -> return (reverse a)
+      False -> many' (s:a)
+
+  
+
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
 -- even when an error response is returned. In case of a error response, the function fails
 -- with the string provided with the error message. Otherwise response is returned.

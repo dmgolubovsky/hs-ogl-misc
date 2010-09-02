@@ -242,7 +242,7 @@ dpacc devd msg = do
                       fstz f = (getFileStatus f >>= \s -> return [(s, f)]) `catch` 
                                  (\_ -> return [])
                   sts <- mapM fstz rfps >>= return . concat
-                  nsts <- zipWithM stat2stat (map fst sts) (map snd sts)
+                  nsts <- zipWithM stat2stat (map fst sts) (map (snd . splitFileName . snd) sts)
                   let bs = map (runPut . put) nsts -- get Stat for each file
                       cbs = B.concat bs            -- serialize each Stat and concat
                   rread cbs                        -- send whatever results from concatenation
