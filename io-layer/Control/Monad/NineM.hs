@@ -26,7 +26,9 @@ module Control.Monad.NineM (
  ,getdev
  ,walkdev
  ,statfid
+ ,openfid
  ,readdir
+ ,readfid
  ,devmsg
  ,nextInt
  ,startup
@@ -47,6 +49,7 @@ import Control.Monad.State
 import Control.Monad.Error
 import Control.Exception
 import Data.Int
+import Data.Word
 import Data.Char
 import Data.Maybe
 import Data.Binary.Get
@@ -74,10 +77,15 @@ class ScopeR a where
   retains :: a -> [DEVFID]
   retains _ = []
 
+instance (ScopeR a) => ScopeR [a] where
+  retains as = concatMap retains as
+
 instance ScopeR ()
 
 instance ScopeR DEVFID where
   retains a = [a]
+
+instance ScopeR Stat
 
 -- | Enter a new scope. Thie function updates the scope reference in the thread state
 -- by creating a new empty scope and linking it to the current scope which becomes a parent.
@@ -192,6 +200,7 @@ freshdev dc = do
       put s {devMap = dm'}
       return $ Device di
 
+
 -- | Get a device for the given letter and tree. If such a device had been attached before,
 -- use it. Otherwise allocate a fresh device, execute the optional authentication code,
 -- and return it. This function operates in a scope and retains a DEVFID for its parent scope.
@@ -224,7 +233,7 @@ getdev dc fp auth = runScope $ do
   devmsg rd $ Twalk rf nf []
   return (rd, nf)
 
--- Walk a device from the given DEVFID to the given split path. The function
+-- | Walk a device from the given DEVFID to the given split path. The function
 -- fails if the driver returns an error message as well as if the walk is incomplete.
 -- FID for the destination path is returned. The destination path is considered relative
 -- to the one source DEVFID is for. QIDs returned by the driver are lost, only their number
@@ -247,6 +256,25 @@ statfid (dev, fid) = do
    (Rstat r) <- devmsg dev $ Tstat fid
    return $ head r                -- NB to be changed once the NineP module is updated.
     
+
+-- | Open the given FID on the given device. IOUNIT is ignored for the local message
+-- exchange, but Qid is valuable.
+
+openfid :: DEVFID -> Word8 -> NineM u Qid
+
+openfid (dev, fid) mode = do
+  (Ropen q i) <- devmsg dev $ Topen fid mode
+  return q
+
+-- | Read contents of a file as a 'ByteString'. The FID should be open before 'readfid'
+-- may be used on it.
+
+readfid :: DEVFID -> Word64 -> Word32 -> NineM u B.ByteString
+
+readfid (dev, fid) off cnt = do
+  (Rread r) <- devmsg dev $ Tread fid off cnt
+  return r
+
 
 -- | Read contents of a directory as a list of 'Stat' structures. This function sends a
 -- read message using given device and FID. The returned 'ByteString' will be parsed as

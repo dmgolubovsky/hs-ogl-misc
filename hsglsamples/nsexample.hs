@@ -22,6 +22,10 @@ main = do
     lift $ device 'Z' $ devPosix True rootdir
     bindPath BindRepl "#Z" "/"
     bindPath (BindBefore True) "/m2" "/m1"
+    r <- readUnion dir
+    liftIO $ mapM (putStrLn . show) r
+
+{-
     e <- evalPath dir
     liftIO . putStrLn . show $ e
     s <- lift $ statfid (epDev e, epFID e)
@@ -29,7 +33,8 @@ main = do
     lift $ devmsg (epDev e) $ Topen (epFID e) c_OREAD
     r <- lift $ readdir (epDev e, epFID e)
     liftIO $ putStrLn $ show r
-    
+-}  
+  
 {-
     device 'Z' $ devPosix True rootdir
     d <- freshdev 'Z'

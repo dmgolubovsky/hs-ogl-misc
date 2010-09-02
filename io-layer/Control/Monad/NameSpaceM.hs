@@ -19,6 +19,7 @@ module Control.Monad.NameSpaceM (
  ,startns
  ,bindPath
  ,evalPath
+ ,readUnion
  ,addUnion
  ,unionDir
  ,UnionDir (..)
@@ -29,6 +30,7 @@ module Control.Monad.NameSpaceM (
 import PrivateDefs
 import Data.Char
 import Data.Word
+import Data.Bits
 import qualified Data.DList as DL
 import Control.Monad
 import Control.Monad.NineM
@@ -207,6 +209,22 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
       (_, wfid) <- lift $ walkdev (zdev, zfid) zfp
       return (zeval, zdev, wfid)
   eval_step (rdev, rfid) rawps (orig ++ [rawp]) rfp    
+
+-- | Read contents of a union point as list of 'Stat' structures.
+
+readUnion :: FilePath -> NameSpaceM [Stat]
+
+readUnion fp = liftScope $ do
+  ep <- evalPath fp
+  let fid = head $ retains ep
+  st <- lift $ statfid fid
+  let mode = qid_typ (st_qid st)
+  case (mode .&. c_QTDIR) of
+    0 -> fail $ fp ++ " not a directory"
+    _ -> do
+      dirs <- get >>= findunion (epCanon ep) >>= \ps -> return (if null ps then [epEval ep] else ps)
+      liftIO $ mapM putStrLn dirs
+      return []
 
 -- | Run a NameSpaced action in a scope. Whatever is returned, retains some or none 
 -- DEVFIDs for the parent scope. Simple 'lift' would not work here as proper manipulation
