@@ -223,8 +223,17 @@ readUnion fp = liftScope $ do
     0 -> fail $ fp ++ " not a directory"
     _ -> do
       dirs <- get >>= findunion (epCanon ep) >>= \ps -> return (if null ps then [epEval ep] else ps)
-      liftIO $ mapM putStrLn dirs
-      return []
+      sts <- forM dirs $ \dir -> do
+        rfid <- attdev 2048 dir
+        dfid <- lift $ walkdev rfid (tail $ splitPath dir)
+        qid <- lift $ openfid dfid c_OREAD
+        rsts <- case qid_typ qid .&. c_QTDIR of
+                  0 -> return []
+                  _ -> lift (readdir dfid `catchSome` (\e -> return []))
+        let dc = deviceOf dir
+            setdev st = st {st_dev = fromIntegral $ ord dc}
+        return $ map setdev rsts
+      return $ concat sts
 
 -- | Run a NameSpaced action in a scope. Whatever is returned, retains some or none 
 -- DEVFIDs for the parent scope. Simple 'lift' would not work here as proper manipulation
@@ -263,7 +272,8 @@ findroot ns = do
 findunion :: FilePath -> NameSpace -> NameSpaceM [FilePath]
 
 findunion fp ns = do
-  let up = M.lookup (NsPath fp) ns
+  let fp' = if fp == "/" then fp else normalise (fp ++ "/")
+      up = M.lookup (NsPath fp') ns
   case up of
     Just (UnionPoint ud fp) -> return . map dirfp . DL.toList $ unDir ud 
     _ -> return []

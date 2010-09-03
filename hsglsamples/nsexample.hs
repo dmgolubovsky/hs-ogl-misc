@@ -2,6 +2,7 @@
 
 module Main where
 
+import Data.Char
 import System.IO
 import System.FilePath
 import System.Directory
@@ -23,7 +24,13 @@ main = do
     bindPath BindRepl "#Z" "/"
     bindPath (BindBefore True) "/m2" "/m1"
     r <- readUnion dir
-    liftIO $ mapM (putStrLn . show) r
+    liftIO $ mapM_ (putStrLn . fmt) r
+
+fmt :: Stat -> String
+
+fmt st = [chr (fromIntegral $ st_dev st)] ++ " " ++
+         st_name st
+
 
 {-
     e <- evalPath dir
@@ -46,6 +53,5 @@ main = do
     liftIO . putStrLn $ show wk
     liftIO (hGetLine stdin) >>= liftIO . putStrLn
 -}
-    return ()
 
 
