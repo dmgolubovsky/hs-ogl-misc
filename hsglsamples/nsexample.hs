@@ -3,6 +3,8 @@
 module Main where
 
 import Data.Char
+import Data.Word
+import Data.Bits
 import System.IO
 import System.FilePath
 import System.Directory
@@ -28,9 +30,15 @@ main = do
 
 fmt :: Stat -> String
 
-fmt st = [chr (fromIntegral $ st_dev st)] ++ " " ++
+fmt st = fmode (st_mode st) ++ " " ++
+         [chr (fromIntegral $ st_dev st)] ++ " " ++
          st_name st
 
+fmode :: Word32 -> String
+
+fmode mod = fdir mod ++ "" where
+  fdir x | x .&. c_DMDIR /= 0 = "d"
+  fdir _ = "-"
 
 {-
     e <- evalPath dir

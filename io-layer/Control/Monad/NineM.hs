@@ -285,7 +285,9 @@ readdir :: DEVFID -> NineM u [Stat]
 
 readdir (dev, fid) = do
   (Rread r) <- devmsg dev $ Tread fid 0 9999
-  return $ runGet (many D.get) r
+  if B.null r 
+    then return []
+    else return $ runGet (many D.get) r
 
 many :: Get a -> Get [a]
 
