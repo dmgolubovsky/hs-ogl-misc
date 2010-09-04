@@ -31,7 +31,8 @@ main = do
 fmt :: Stat -> String
 
 fmt st = fmode (st_mode st) ++ " " ++
-         [chr (fromIntegral $ st_dev st)] ++ " " ++
+         [chr (fromIntegral $ st_typ st)] ++ " " ++
+         show (st_dev st) ++ " " ++
          st_name st
 
 fmode :: Word32 -> String

@@ -1,0 +1,67 @@
+#!/bin/sh
+
+# This script generates a Haskell module containing Plan9-style error definitions
+# out of the file "error.h" found in the Plan9 source tree. This script and the
+# "error.h" file are part of the repository but not part of the Cabal package.
+# The Cabal distribution must contain the pre-generated Haskell module.
+# Only if you have changed the local copy of "error.h" you need to regenerate
+# the Haskell module.
+# This script is derived from the "mkerrstr" script which generates a C file
+# with actual error strings.
+
+# Module header.
+
+cat <<EOF
+------------------------------------------------------------------
+-- |
+-- Module      :  System.IO9.Error
+-- Copyright   :  (c) Dmitry Golubovsky, 2010
+-- License     :  BSD-style
+--
+-- Maintainer  :  golubovsky@gmail.com
+-- Stability   :  experimental
+-- Portability :  GHC >= 6.12.2
+--
+--
+--
+-- Plan9-style errors definition: based on /sys/src/9/port/error.h
+------------------------------------------------------------------
+
+-- File generated automatically - do not edit.
+
+module System.IO9.Error (
+  NineError (..)) where
+
+import Data.Typeable
+import Control.Exception
+
+EOF
+
+# Data definition.
+
+cat <<EOF
+data NineError = OtherError String
+EOF
+sed 's,.*\(E[a-z]*\).*/\* \(.*\) \*/, | \1\t-- ^ \2,' < error.h
+cat <<EOF
+    deriving (Typeable)
+EOF
+echo
+
+# Show instance.
+
+cat <<EOF
+instance Show NineError where
+  show (OtherError s) = s
+EOF
+sed 's/\[\]//;s/char/  show/;s/extern //;s,;.*/\* \(.*\) \*/, = "\1",' < error.h
+echo
+
+# Exception instance.
+
+cat <<EOF
+instance Exception NineError
+EOF
+echo
+
+

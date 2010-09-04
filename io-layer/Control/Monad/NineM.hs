@@ -40,6 +40,7 @@ module Control.Monad.NineM (
 import PrivateDefs
 import Prelude hiding (catch)
 import System.FilePath
+import System.IO9.Error
 import System.IO9.Device hiding (get, put)
 import Control.Monad
 import Control.Concurrent
@@ -162,7 +163,7 @@ updDev di dev = do
   s <- get
   mbd <- findDev di
   case mbd of
-    Nothing -> fail "invalid device index"
+    Nothing -> throw $ OtherError $ "internal: cannot find device " ++ show di
     Just (_, dc) -> do
       let dm' = I.insert di (dev, dc) (devMap s)
       put s {devMap = dm'}
@@ -192,7 +193,7 @@ freshdev :: Char -> NineM u Device
 freshdev dc = do
   mbd <- get >>= return . M.lookup dc . devTab
   case mbd of
-    Nothing -> fail $ "no device driver found by letter " ++ [dc]
+    Nothing -> throw Ebadsharp
     Just dev -> do
       di <- nextInt
       s <- get
@@ -246,7 +247,7 @@ walkdev (dev, ffid) fps = runScope $ nextInt >>= return . fromIntegral >>= \tfid
   case (length rwlk, length fps) of
     (1, 0) -> return (dev, tfid)
     (x, y) | x == y -> return (dev, tfid)
-    _ -> fail $ "eval: cannot walk to " ++ joinPath fps
+    _ -> throw Enonexist
 
 -- | Obtain a 'Stat' structure for a given device/fid.
 
@@ -315,13 +316,13 @@ devmsg (Device di) msgb = do
        ,msg_body = msgb}
   mbd <- findDev di
   case mbd of
-    Nothing -> fail "invalid device number"
+    Nothing -> throw $ OtherError $ "internal: cannot find device " ++ show di
     Just (d, _) -> do
       resp <- liftIO $ d msg
       updDev di $ re_cont resp
       let rspb = msg_body $ re_msg resp
       case rspb of
-        Rerror e -> fail e
+        Rerror e -> throw $ OtherError $ "internal: 9P error " ++ e
         _ -> return rspb
 
 -- Thread life cycle. Being started with some initial state, it proceeds
@@ -398,7 +399,8 @@ spawn :: NineM u () -> NineM u ThreadId
 
 spawn thr = do
   s <- get
-  when (isJust $ pScope (currScope s)) $ fail "spawn: called from a nested scope"
+  when (isJust $ pScope (currScope s)) $ 
+    throw $ OtherError "spawn: called from a nested scope"
   tv <- liftIO . atomically $ newTVar ThreadStarted
   mv <- liftIO newEmptyMVar
   let s' = s {thrMap = M.empty
@@ -419,7 +421,7 @@ wait thr = do
   s <- get
   let thrv = M.lookup thr (thrMap s)
   case thrv of
-    Nothing -> fail $ "not a child thread: " ++ show thr
+    Nothing -> throw Enochild
     Just (tv, mv) -> liftIO $ do
       readMVar mv
       atomically $ readTVar tv

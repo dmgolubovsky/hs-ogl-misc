@@ -38,6 +38,8 @@ import Control.Monad.State
 import Control.Monad.Trans
 import System.FilePath
 import System.Directory
+import System.IO9.Error
+import Control.Exception
 import System.IO9.Device hiding (get, put)
 import System.IO9.NameSpace.Pure
 import qualified Data.Map as M
@@ -66,7 +68,7 @@ bindPath :: BindFlag                   -- ^ Bind options (before, after, create 
          -> NameSpaceM ()              -- ^ No return value, namespace updated under the hood
 
 bindPath _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
-  fail "bind: both path should be absolute or device"
+  throw Efilename
 
 bindPath fl new old | old == "/" && isDevice new = do
   let flt (NsPath _) _ = True
@@ -117,7 +119,7 @@ instance ScopeR EvalPath where
 evalPath :: FilePath -> NameSpaceM EvalPath
 
 evalPath fp | not (isAbsolute fp || isDevice fp) =
-  fail "eval: path should be absolute"
+  throw Efilename
 
 evalPath fp = liftScope $ do
   (d, c, e) <- eval_root (splitPath fp) []
@@ -141,7 +143,7 @@ eval_root (dvp : rawps) xps | isDevice dvp = do
   let orig = head (xps ++ [dvp])
   eval_step (dv, fid) rawps [orig] [dvp]
 
-eval_root _ _ = fail "eval: empty or not absolute/device filepath"
+eval_root _ _ = throw Efilename
 
 -- Evaluate the rest of the path step-wise.
 
@@ -172,7 +174,7 @@ eval_step dfid ("../" : rawps) orig eval = eval_step dfid (".." : rawps) orig ev
 eval_step dfid (".." : rawps) [orig] eval = eval_step dfid rawps [orig] eval
 
 eval_step dfid (".." : rawps) orig [eval] = do
-  fail $ "eval: internal error: .. with singleton evaluated path at " ++ joinPath orig
+  throw $ OtherError $ "internal error: .. with singleton evaluated path at " ++ joinPath orig
 
 eval_step dfid (".." : rawps) orig eval = do
   let chop = reverse . tail . reverse                     -- chop the last element off
@@ -198,7 +200,7 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
       jorig = joinPath orig
       nrawp = normalise (rawp ++ "/")
   undirs <- get >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
-  ress@(rfp, rdev, rfid) <- foldr mplus (fail $ "eval: cannot walk " ++ (jeval </> nrawp)) $ 
+  ress@(rfp, rdev, rfid) <- foldr mplus (throw Enonexist) $ 
     flip map undirs $ \fp -> do
       (zfp, zdev, zfid, zeval) <- case (fp == jeval) of
         True -> return ([nrawp], dev, fid, eval ++ [nrawp])
@@ -220,7 +222,7 @@ readUnion fp = liftScope $ do
   st <- lift $ statfid fid
   let mode = qid_typ (st_qid st)
   case (mode .&. c_QTDIR) of
-    0 -> fail $ fp ++ " not a directory"
+    0 -> throw Enotdir
     _ -> do
       dirs <- get >>= findunion (epCanon ep) >>= \ps -> return (if null ps then [epEval ep] else ps)
       sts <- forM dirs $ \dir -> do
@@ -231,7 +233,8 @@ readUnion fp = liftScope $ do
                   0 -> return []
                   _ -> lift (readdir dfid `catchSome` (\e -> return []))
         let dc = deviceOf dir
-            setdev st = st {st_dev = fromIntegral $ ord dc}
+            setdev st = st { st_typ = fromIntegral $ ord dc
+                            ,st_dev = fromIntegral $ devRef $ fst dfid}
         return $ map setdev rsts
       return $ concat sts
 
@@ -262,7 +265,7 @@ findroot ns = do
   fps <- findunion "/" ns
   case fps of
     (fp:_) | isDevice fp -> return fp
-    _ -> fail "eval: no root binding in the namespace"
+    _ -> throw $ OtherError "eval: no root binding in the namespace"
 
 -- Find all files/directories bound at the given union point. If the namespace provided
 -- does not contain the union point provided, return an empty list.
