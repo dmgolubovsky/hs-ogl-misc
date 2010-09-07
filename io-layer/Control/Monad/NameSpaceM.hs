@@ -24,7 +24,10 @@ module Control.Monad.NameSpaceM (
  ,unionDir
  ,UnionDir (..)
  ,BoundDir (..)
+ ,catchNS
+ ,mplusX
  ,liftScope
+ ,catchScope
 ) where
 
 import PrivateDefs
@@ -200,7 +203,7 @@ eval_step (dev, fid) (rawp : rawps) orig eval = do
       jorig = joinPath orig
       nrawp = normalise (rawp ++ "/")
   undirs <- get >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
-  ress@(rfp, rdev, rfid) <- foldr mplus (throw Enonexist) $ 
+  ress@(rfp, rdev, rfid) <- foldr mplusX (throw Enonexist) $ 
     flip map undirs $ \fp -> do
       (zfp, zdev, zfid, zeval) <- case (fp == jeval) of
         True -> return ([nrawp], dev, fid, eval ++ [nrawp])
@@ -224,19 +227,36 @@ readUnion fp = liftScope $ do
   case (mode .&. c_QTDIR) of
     0 -> throw Enotdir
     _ -> do
-      dirs <- get >>= findunion (epCanon ep) >>= \ps -> return (if null ps then [epEval ep] else ps)
-      sts <- forM dirs $ \dir -> do
+      dirs <- get >>= findunion (epCanon ep) >>= 
+                      \ps -> return (if null ps then [epEval ep] else ps)
+      sts <- forM dirs $ \dir -> (do
         rfid <- attdev 2048 dir
         dfid <- lift $ walkdev rfid (tail $ splitPath dir)
         qid <- lift $ openfid dfid c_OREAD
         rsts <- case qid_typ qid .&. c_QTDIR of
                   0 -> return []
-                  _ -> lift (readdir dfid `catchSome` (\e -> return []))
+                  _ -> lift $ readdir dfid
         let dc = deviceOf dir
             setdev st = st { st_typ = fromIntegral $ ord dc
                             ,st_dev = fromIntegral $ devRef $ fst dfid}
-        return $ map setdev rsts
+        return $ map setdev rsts) `catchScope` (\_ -> return [])
       return $ concat sts
+
+-- | A version of 'catchSome' for use in the 'NameSpaceM' monad.
+
+catchNS :: NameSpaceM a -> (SomeException -> NameSpaceM a) -> NameSpaceM a
+
+x `catchNS`y = do
+  s <- get
+  (r', s') <- lift (runStateT x s `catchSome` (\e -> runStateT (y e) s))
+  put s'
+  return r'
+
+-- | A version of 'mplus' which catches any possible exception (for use in the 'NameSpaceM' monad).
+
+mplusX :: NameSpaceM a -> NameSpaceM a -> NameSpaceM a
+
+x `mplusX` y = (x `catchNS` (\_ -> fail "need this for mplus")) `mplus` y
 
 -- | Run a NameSpaced action in a scope. Whatever is returned, retains some or none 
 -- DEVFIDs for the parent scope. Simple 'lift' would not work here as proper manipulation
@@ -253,6 +273,24 @@ liftScope x = do
     return (xr, xs)
   put s'
   return r'  
+
+-- | Run a NameSpaced action in a scope with exception handling. The 'liftScope' function
+-- rethrows any exception that could be raised inside a namespaced action; this function
+-- tries to run another NameSpaced action that acts as a handler. If the latter action
+-- throws an exception too, it will be rethrown as in 'liftScope'.
+
+catchScope :: (ScopeR r) => NameSpaceM r -> (SomeException -> NameSpaceM r) -> NameSpaceM r
+
+x `catchScope` y = do
+  s <- get
+  (r', s') <- lift $ do
+    enterScope
+    (xr, xs) <- runStateT x s `catchSome` (\e -> runStateT (y e) s) 
+                              `catchSome` (\e1 -> exitScope [] >> E.throw e1)
+    exitScope (retains xr)
+    return (xr, xs)
+  put s'
+  return r'
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
@@ -278,7 +316,7 @@ findunion fp ns = do
   let fp' = if fp == "/" then fp else normalise (fp ++ "/")
       up = M.lookup (NsPath fp') ns
   case up of
-    Just (UnionPoint ud fp) -> return . map dirfp . DL.toList $ unDir ud 
+    Just (UnionPoint ud _) -> return . map dirfp . DL.toList $ unDir ud 
     _ -> return []
 
 -- Attach a device with given letter and tree, get DEVFID for the device/tree.

@@ -53,7 +53,10 @@ import Data.Int
 import Data.Word
 import Data.Char
 import Data.Maybe
+import Data.Either
+import Data.Binary (encode)
 import Data.Binary.Get
+import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.ByteString.Lazy as B
 import qualified Data.IntMap as I
 import qualified Data.Set as S
@@ -286,9 +289,8 @@ readdir :: DEVFID -> NineM u [Stat]
 
 readdir (dev, fid) = do
   (Rread r) <- devmsg dev $ Tread fid 0 9999
-  if B.null r 
-    then return []
-    else return $ runGet (many D.get) r
+  let r' = (B.append r (encode "garbage"))
+  return $ catMaybes $ map bm2mb $ runGet (many D.get) r'
 
 many :: Get a -> Get [a]
 
@@ -298,9 +300,17 @@ many prs = many' [] where
     r <- isEmpty
     case r of
       True -> return (reverse a)
-      False -> many' (s:a)
+      False ->  many' (s:a)
 
-  
+unThrow :: (Exception e) => a -> Either e a
+
+unThrow a = unsafePerformIO $ (E.evaluate a >>= return . Right) `E.catch` (\e -> return $ Left e)
+
+bm2mb :: a -> Maybe a
+
+bm2mb a = case unThrow a of
+  Left (e::SomeException) -> Nothing
+  Right a -> Just a
 
 -- | Send a 9P2000 message to the given device. The device state in devmap is always updated,
 -- even when an error response is returned. In case of a error response, the function fails

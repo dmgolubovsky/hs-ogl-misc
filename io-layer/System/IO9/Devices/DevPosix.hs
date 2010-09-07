@@ -27,6 +27,7 @@ import Data.Either.Unwrap
 import System.FilePath
 import System.Directory
 import System.IO9.Device
+import System.IO9.Error
 import System.Posix.Types
 import System.Posix.Files
 import System.Posix.User
@@ -195,7 +196,7 @@ dpacc devd msg = do
             let fidmap' = M.insert twnfid rpth (fidmap devd)
             case (length twnames, length res) of
               (0, 1) -> rwalk res (devd {fidmap = fidmap'})
-              (_, 1) -> emsg "first path element cannot be walked"
+              (_, 1) -> emsg $ show Enonexist
               (m, n) | n == m + 1 -> rwalk (tail res) (devd {fidmap = fidmap'})
               _ -> rwalk (tail res) devd
       (TTopen, Topen ofid omode) -> do -- for directory, just store its contents
