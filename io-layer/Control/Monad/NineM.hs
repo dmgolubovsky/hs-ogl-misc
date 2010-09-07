@@ -289,8 +289,7 @@ readdir :: DEVFID -> NineM u [Stat]
 
 readdir (dev, fid) = do
   (Rread r) <- devmsg dev $ Tread fid 0 9999
-  let r' = (B.append r (encode "garbage"))
-  return $ catMaybes $ map bm2mb $ runGet (many D.get) r'
+  return $ catMaybes $ map bm2mb $ runGet (many D.get) r
 
 many :: Get a -> Get [a]
 

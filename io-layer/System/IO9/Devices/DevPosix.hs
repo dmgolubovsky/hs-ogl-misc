@@ -232,7 +232,7 @@ dpacc devd msg = do
           Just rfp -> do
             ex <- fileExist rfp     -- file could have disappeared
             case ex of
-              False -> emsg $ "File/directory does not exist: " ++ rfp
+              False -> emsg $ show Enonexist
               True -> case rval of
                 Nothing -> emsg $ "Fid " ++ show rfid ++ " was not open"
                 Just (m, Left h) | m .&. 3 /= c_OWRITE -> do
@@ -248,6 +248,22 @@ dpacc devd msg = do
                       cbs = B.concat bs            -- serialize each Stat and concat
                   rread cbs                        -- send whatever results from concatenation
                 _ -> emsg $ "Incorrect fid mode: " ++ show rfid 
+      (TTwrite, Twrite wfid woff wdat) -> do -- directories cannot be written
+        let wpath = M.lookup wfid $ fidmap devd
+            wval = M.lookup wfid $ openmap devd
+            rwrite b = return $ Resp9P (msg {msg_typ = TRwrite, msg_body = Rwrite b}) (dpacc devd)
+        case wpath of
+          Nothing -> emsg $ "Incorrect fid: " ++ show wfid
+          Just wfp -> do
+            ex <- fileExist wfp     -- file could have disappeared
+            case ex of
+              False -> emsg $ show Enonexist
+              True -> case wval of
+                Nothing -> emsg $ "Fid " ++ show wfid ++ " was not open"
+                Just (m, Left h) -> do -- append-only files not supported, always write at woff
+                  hSeek h AbsoluteSeek (fromIntegral woff)
+                  B.hPut h wdat >> hFlush h >> rwrite (fromIntegral $ B.length wdat)
+                _ -> emsg $ show Eisdir
       _ -> emsg $ "Incorrect message " ++ show msg
 
 
