@@ -35,6 +35,4 @@ extra-libraries: GL, GLU, Xrandr
 executable:     nsexample
 main-is:        nsexample.hs
 
-executable:     scctest
-main-is:        scctest.hs
 

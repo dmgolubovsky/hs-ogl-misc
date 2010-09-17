@@ -9,18 +9,21 @@ import System.IO
 import System.FilePath
 import System.Directory
 import System.Environment
-import Control.Monad.NineM
-import Control.Monad.NameSpaceM
 import Control.Monad.Trans
 import Control.Monad.State
-import System.IO9.Device hiding (get, put)
-import System.IO9.Devices.DevPosix
+import System.IO9.DevLayer
+import System.IO9.HostAccess
 
 rootdir = "/home/dima/ns-root"
 
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
+  dev <- devHost [(rootdir, "/")]
+  att <- devAttach dev "/"
+  putStrLn $ show att
+
+{-
   startns $ do
     lift $ device 'Z' $ devPosix True rootdir
     bindPath BindRepl "#Z" "/"
@@ -40,7 +43,7 @@ fmode :: Word32 -> String
 fmode mod = fdir mod ++ "" where
   fdir x | x .&. c_DMDIR /= 0 = "d"
   fdir _ = "-"
-
+-}
 {-
     e <- evalPath dir
     liftIO . putStrLn . show $ e

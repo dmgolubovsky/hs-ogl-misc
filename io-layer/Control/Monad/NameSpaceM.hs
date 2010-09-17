@@ -14,7 +14,8 @@
 ------------------------------------------------------------------
 
 module Control.Monad.NameSpaceM (
-  BindFlag (..)
+  NameSpaceM
+ ,BindFlag (..)
  ,EvalPath (..)
  ,startns
  ,bindPath
