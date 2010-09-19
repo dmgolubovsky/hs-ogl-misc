@@ -23,6 +23,8 @@ module System.IO9.DevLayer (
  ,stat2Qid
 ) where
 
+import Data.Word
+import Data.Bits
 import Data.NineP
 import Data.NineP.Bits
 import System.IO
@@ -40,9 +42,10 @@ import Control.Exception
 data DevTable = DevTable {
    devchar :: Char                                   -- ^ Device character
   ,attach_ :: FilePath -> IO DevAttach               -- ^ Attach a device with the given root
-  ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the given name 
-                                                     -- (file or directory)
-  ,open_ :: DevAttach -> IOMode -> IO Handle         -- ^ Open a handle on the given object
+  ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
+                                                     -- (file or directory) - only one level
+  ,open_ :: DevAttach -> FilePath -> Word8 -> IO Handle -- ^ Open a handle on the given object
+  ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO () -- ^ Create a new object
   ,stat_ :: DevAttach -> IO FileStatus               -- ^ Obtain object attributes
   ,wstat_ :: DevAttach -> FileStatus -> IO DevAttach -- ^ Change some object attributes
 }
@@ -72,28 +75,38 @@ devAttach = attach_
 -- | Device operations dispatch via an attachment.
 --
 -- Walk from this object on the device to another object on the device with
--- the split file path (relative) provided.
+-- the relative path provided. The source attachment descriptor should correspond 
+-- to a directory. Walks to dot are handled without device driver involvement.
 
 devWalk :: DevAttach -> FilePath -> IO DevAttach
 
-devWalk da fp = walk_ (devtbl da) da fp
+devWalk da _ | qid_typ (devqid da) .&. c_QTDIR == 0 = throw Enotdir
+
+devWalk da fp | isAbsolute fp = throw Efilename
+
+devWalk da fp = walk' da (normalise fp) where 
+  walk' da "." = return da
+  walk' da "./" = return da
+  walk' da fp = walk_ (devtbl da) da fp
 
 -- | Open a 'Handle' to access the given object on the device. The 'Handle' will be either
 -- a "standard" file handle, or a custom handle: in this case the underlying device driver
--- must provide its own instances of IODevice and BufferedIO.
+-- must provide its own instances of IODevice and BufferedIO. The third argument of this
+-- function is 9P2000 open mode.
 
-devOpen :: DevAttach -> IOMode -> IO Handle
+devOpen :: DevAttach -> FilePath -> Word8 -> IO Handle
 
-devOpen da iom = open_ (devtbl da) da iom
+devOpen da = open_ (devtbl da) da
 
--- | Default device table with all device functions throwing some error.
+-- | Default device table with all device functions throwing an error.
 
 defDevTable :: Char -> DevTable
 
 defDevTable c = DevTable { devchar = c
                           ,attach_ = \_ -> throwIO Eshutdown
                           ,walk_ = \_ _ -> throwIO Eshutdown
-                          ,open_ = \_ _ -> throwIO Eshutdown
+                          ,open_ = \_ _ _ -> throwIO Eshutdown
+                          ,create_ = \_ _ _ _ -> throwIO Eshutdown
                           ,stat_ = \_ -> throwIO Eshutdown
                           ,wstat_ = \_ _ -> throwIO Eshutdown}
 

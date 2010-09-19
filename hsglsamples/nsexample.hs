@@ -22,6 +22,9 @@ main = do
   dev <- devHost [(rootdir, "/")]
   att <- devAttach dev "/"
   putStrLn $ show att
+  wlk <- devWalk att dir
+  putStrLn $ show wlk
+  putStrLn $ show (devqid wlk)
 
 {-
   startns $ do

@@ -17,6 +17,7 @@ module System.IO9.HostAccess (
   devHost
 ) where
 
+import Prelude hiding (catch)
 import Control.Monad
 import Control.Exception
 import System.IO9.DevLayer
@@ -45,7 +46,9 @@ devHost trees = do
       _ -> throwIO Efilename
   let trmap = M.fromList trs
       devtbl = (defDevTable 'Z') {
-        attach_ = haattach devtbl trmap} 
+        attach_ = haattach devtbl trmap
+--       ,open_ = haopen devtbl trmap
+       ,walk_ = hawalk devtbl trmap} 
   return devtbl
 
 -- Attach a device. Returns an attachment descriptor for the selected tree.
@@ -66,5 +69,37 @@ haattach tbl tmap tree = do
                         ,devpath = "/"
                         ,devtree = tree}
     
+-- Walk one level to the object with given name. Returns a new attachment descriptor
+-- for the new object if it exists (throws an error otherwise). Walk to dotdot always
+-- drops one level from the source filepath (or remains at root).
+
+hawalk :: DevTable -> M.Map FilePath FilePath -> DevAttach -> FilePath -> IO DevAttach
+
+hawalk tbl tmap da "../" = walk' tbl tmap da (dropFileName $ devpath da)
+
+hawalk tbl tmap da ".." = walk' tbl tmap da (dropFileName $ devpath da)
+
+hawalk tbl tmap da fp = walk' tbl tmap da (devpath da </> fp)
+
+walk' tbl tmap da fp = do
+  npth <- objpath tmap da fp
+  st <- getFileStatus npth
+  return DevAttach { devtbl = tbl
+                    ,devqid = stat2Qid st
+                    ,devpath = normalise fp
+                    ,devtree = devtree da}
 
 
+-- Given an attachment descriptor, produce the host file path to the object described.
+
+objpath :: M.Map FilePath FilePath -> DevAttach -> FilePath -> IO FilePath
+
+objpath tmap da fp = do
+  let mbhostfp = M.lookup (devtree da) tmap
+  case mbhostfp of
+    Nothing -> throwIO Ebadarg
+    Just hostfp -> do
+      let npth = normalise (hostfp ++ "/" ++ fp)
+      ex <- (fileExist npth) `catch` (\(e :: IOError) -> return False)
+      when (not ex) $ throwIO Enonexist
+      return npth
