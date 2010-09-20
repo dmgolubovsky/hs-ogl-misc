@@ -18,9 +18,12 @@ module System.IO9.HostAccess (
 ) where
 
 import Prelude hiding (catch)
+import Data.Word
 import Control.Monad
 import Control.Exception
+import Data.NineP.Posix
 import System.IO9.DevLayer
+import System.IO
 import System.Posix.IO
 import System.Posix.Files
 import System.FilePath
@@ -47,7 +50,7 @@ devHost trees = do
   let trmap = M.fromList trs
       devtbl = (defDevTable 'Z') {
         attach_ = haattach devtbl trmap
---       ,open_ = haopen devtbl trmap
+       ,open_ = haopen devtbl trmap
        ,walk_ = hawalk devtbl trmap} 
   return devtbl
 
@@ -89,6 +92,20 @@ walk' tbl tmap da fp = do
                     ,devpath = normalise fp
                     ,devtree = devtree da}
 
+-- Open a Handle existing object identified by an attachment descriptor.
+-- This function receives a 9P2000 open flags rather than Posix open flags.
+
+haopen :: DevTable -> M.Map FilePath FilePath -> DevAttach -> Word8 -> IO Handle
+
+haopen tbl tmap da flg = do
+  npth <- objpath tmap da (devpath da)
+  st <- getFileStatus npth
+  case isDirectory st of
+    True -> throwIO Eisdir
+    False -> do
+      let iom = omode2IOMode flg
+      openFile npth iom
+  
 
 -- Given an attachment descriptor, produce the host file path to the object described.
 

@@ -6,6 +6,7 @@ import Data.Char
 import Data.Word
 import Data.Bits
 import System.IO
+import Data.NineP.Bits
 import System.FilePath
 import System.Directory
 import System.Environment
@@ -25,6 +26,8 @@ main = do
   wlk <- devWalk att dir
   putStrLn $ show wlk
   putStrLn $ show (devqid wlk)
+  h <- devOpen wlk c_OREAD
+  hGetContents h >>= putStrLn
 
 {-
   startns $ do

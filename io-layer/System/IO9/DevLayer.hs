@@ -20,13 +20,13 @@ module System.IO9.DevLayer (
  ,devAttach
  ,devWalk
  ,devOpen
- ,stat2Qid
 ) where
 
 import Data.Word
 import Data.Bits
 import Data.NineP
 import Data.NineP.Bits
+import Data.NineP.Posix
 import System.IO
 import System.Posix.Files
 import System.FilePath
@@ -44,8 +44,8 @@ data DevTable = DevTable {
   ,attach_ :: FilePath -> IO DevAttach               -- ^ Attach a device with the given root
   ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
                                                      -- (file or directory) - only one level
-  ,open_ :: DevAttach -> FilePath -> Word8 -> IO Handle -- ^ Open a handle on the given object
-  ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO () -- ^ Create a new object
+  ,open_ :: DevAttach -> Word8 -> IO Handle          -- ^ Open a handle on the given object
+  ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO DevAttach -- ^ Create a new object
   ,stat_ :: DevAttach -> IO FileStatus               -- ^ Obtain object attributes
   ,wstat_ :: DevAttach -> FileStatus -> IO DevAttach -- ^ Change some object attributes
 }
@@ -91,10 +91,10 @@ devWalk da fp = walk' da (normalise fp) where
 
 -- | Open a 'Handle' to access the given object on the device. The 'Handle' will be either
 -- a "standard" file handle, or a custom handle: in this case the underlying device driver
--- must provide its own instances of IODevice and BufferedIO. The third argument of this
+-- must provide its own instances of IODevice and BufferedIO. The second argument of this
 -- function is 9P2000 open mode.
 
-devOpen :: DevAttach -> FilePath -> Word8 -> IO Handle
+devOpen :: DevAttach -> Word8 -> IO Handle
 
 devOpen da = open_ (devtbl da) da
 
@@ -105,24 +105,9 @@ defDevTable :: Char -> DevTable
 defDevTable c = DevTable { devchar = c
                           ,attach_ = \_ -> throwIO Eshutdown
                           ,walk_ = \_ _ -> throwIO Eshutdown
-                          ,open_ = \_ _ _ -> throwIO Eshutdown
+                          ,open_ = \_ _ -> throwIO Eshutdown
                           ,create_ = \_ _ _ _ -> throwIO Eshutdown
                           ,stat_ = \_ -> throwIO Eshutdown
                           ,wstat_ = \_ _ -> throwIO Eshutdown}
-
--- | Build a Qid from file status.
-
-stat2Qid :: FileStatus -> Qid
-
-stat2Qid stat =
-  let isdir = isDirectory stat
-      inode = fileID stat
-      ctime = modificationTime stat
-      qid = Qid {
-        qid_typ = if isdir then c_QTDIR else 0
-       ,qid_vers = round(realToFrac ctime)
-       ,qid_path = fromIntegral inode
-      }
-  in  qid
 
 
