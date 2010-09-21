@@ -15,11 +15,24 @@ import Control.Monad.State
 import System.IO9.DevLayer
 import System.IO9.HostAccess
 
+import System.IO9.DirStream
+import qualified Data.ByteString as B
+
 rootdir = "/home/dima/ns-root"
+
+untilM p f = do
+  x <- f
+  if p x then return x
+         else untilM p f
 
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
+  s <- openDirStreamB dir
+  untilM B.null $ do
+    b <- readDirStreamB s
+    putStrLn $ show b
+    return b
   dev <- devHost [(rootdir, "/")]
   att <- devAttach dev "/"
   putStrLn $ show att
@@ -28,6 +41,8 @@ main = do
   putStrLn $ show (devqid wlk)
   h <- devOpen wlk c_OREAD
   hGetContents h >>= putStrLn
+
+ 
 
 {-
   startns $ do

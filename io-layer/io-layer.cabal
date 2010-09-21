@@ -19,8 +19,11 @@ build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.
 extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 
 exposed-modules:
-    Data.NineP.Bits, Data.NineP.Posix, GHC.IO.CSPHandle, System.IO9.Error,
+    Data.NineP.Bits, Data.NineP.Posix, 
+    GHC.IO.CSPHandle, 
+    System.IO9.Error, System.IO9.DirStream,
     System.IO9.NameSpace.Pure, System.IO9.DevLayer, System.IO9.HostAccess
+    
 
 other-modules:
 
