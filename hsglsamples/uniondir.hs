@@ -8,7 +8,8 @@ module Main where
 
 import GHC.IO.CSPHandle
 import qualified Data.DList as DL
-import Control.Monad.NameSpaceM
+--import Control.Monad.NameSpaceM
+import System.IO9.NameSpace.Pure
 import System.FilePath
 import Control.Concurrent
 import GHC.IO.Device

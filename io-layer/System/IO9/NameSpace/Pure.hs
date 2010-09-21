@@ -33,7 +33,6 @@ import Data.Char
 import Data.List
 import Data.Maybe
 import System.FilePath
-import System.IO9.Device
 import Control.Monad
 import qualified Data.DList as DL
 import qualified Data.Map as M
