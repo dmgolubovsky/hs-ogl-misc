@@ -22,6 +22,7 @@ module GHC.IO.CSPHandle (
  ,fillBuf
 ) where
 
+import Prelude hiding (catch)
 import Foreign.Ptr
 import Foreign.ForeignPtr
 import Data.Word
@@ -33,6 +34,7 @@ import GHC.IO.Device
 import GHC.IO.Buffer
 import GHC.IO.BufferedIO
 import GHC.IO.Exception
+import System.IO.Error
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as I
 
@@ -50,6 +52,7 @@ data ContSP =
                                         --   sufficient for a transmission unit
  | ContErr !IOException                 -- ^ Exception occurred
 
+
 -- | Continuation-based Stream processor function to implement the handle.
 -- A stream processor function has to be provided by the implementation of 'Handle'.
 
@@ -63,7 +66,7 @@ data ContSP =
 
 
 
-type ContSPFun = Bool                  -- ^ True if blocking I/O
+type ContSPFun = Bool                  -- ^ True if blocking I/O           
               -> Maybe B.ByteString    -- ^ Only for write handles, post-buffered data
               -> Maybe (Ptr Word8)     -- ^ Handle's buffer
               -> Int                   -- ^ Available bytes in the buffer
@@ -71,11 +74,17 @@ type ContSPFun = Bool                  -- ^ True if blocking I/O
 
 -- | General class of IODevices backed by stream processor. An instance of 'CSPIO' is
 -- expected to hold a mutable reference ('IORef' or 'MVar') to the stream processor state,
--- so the 'setsp' method would save a new state.
+-- so the 'setsp' method would save a new state. The 'initsp' method should initialize
+-- the underlying data source (seek to the beginning of the stream) and to return
+-- 'ContReady' with proper continuation function (so that the next I/O operation works
+-- at the beginning of the stream). This method will also be called when repositioning
+-- the previously consumed stream to the beginning (the stream may even be in 'ContErr'
+-- or 'ContEOF' state).
 
 class (IODevice a) => CSPIO a where
   getsp :: a -> IO ContSP
   setsp :: a -> ContSP -> IO ()
+  initsp :: a -> IO ContSP
   bufsize :: a -> Int
 
 -- | Wrapper newtype for streamed reader devices.
@@ -93,7 +102,7 @@ instance (CSPIO a) => IODevice (StreamReader a) where
   close = close . unStreamR
   isTerminal = isTerminal . unStreamR
   isSeekable = isSeekable . unStreamR
-  seek = seek . unStreamR
+  seek = seekCSP . unStreamR
   tell = tell . unStreamR
   getSize = getSize . unStreamR
   setSize = setSize . unStreamR
@@ -111,8 +120,8 @@ instance (CSPIO d) => BufferedIO (StreamReader d) where
   emptyWriteBuffer d _ = throwIO unsupportedOperation
   flushWriteBuffer d _ = throwIO unsupportedOperation
   flushWriteBuffer0 d _ = throwIO unsupportedOperation
-  fillReadBuffer d b = readHBuf (unStreamR d) b
-  fillReadBuffer0 d b = readHBuf0 (unStreamR d) b
+  fillReadBuffer = readHBuf . unStreamR
+  fillReadBuffer0 = readHBuf0 . unStreamR
 
 -- | General utility function to be used by reader stream processor implementations:
 -- Fill a buffer from a bytestring as much as possible, returning remainder
@@ -129,6 +138,30 @@ fillBuf bb@(I.PS ps s l) buf avl = do
       let (I.PS ps1 s1 l1, bb2) = B.splitAt avl bb
       withForeignPtr ps1 $ \pss -> bcpy (pss `plusPtr` s1) avl
       return (avl, Just bb2)
+
+-- Perform a seek (rewind). We only get here if isSeekable returns True.
+-- However anything may happen, so result has to be checked. The 'initsp'
+-- method will be called. If it fails with any error, this error will be
+-- saved as the new stream state.
+
+seekerr = ioError $  mkIOError illegalOperationErrorType
+                               "Stream can only be seek'd to 0"
+                               Nothing
+                               Nothing
+
+
+seekCSP :: (CSPIO d) => d -> SeekMode -> Integer -> IO ()
+
+seekCSP _ SeekFromEnd _ = seekerr
+
+seekCSP d RelativeSeek 0 = return ()
+
+seekCSP d AbsoluteSeek 0 = do
+  sp <- (initsp d) `catch` (return . ContErr)
+  setsp d sp
+  return ()
+
+seekCSP _ _ _ = seekerr
 
 -- Not exported.
 
