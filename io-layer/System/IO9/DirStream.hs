@@ -26,16 +26,20 @@ import Prelude hiding (catch)
 import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
+import Data.IORef
 import Data.Typeable
 import GHC.IO.Device
 import GHC.IO.Buffer
 import GHC.IO.BufferedIO
+import System.IO
 import System.IO.Error
 import System.Posix.Types
 import Control.Exception
 import Foreign.Marshal.Alloc
 import System.Posix.Directory
+import GHC.IO.CSPHandle
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C
 import qualified GHC.IO.Device as R
 import qualified Data.ByteString.Internal as I
 
@@ -117,69 +121,46 @@ closeDirStreamB (DirStreamB (dirp, _)) = do
 foreign import ccall unsafe "closedir"
    c_closedir :: Ptr () -> IO CInt
 
--- Needed to implement a dup.
+-- Instances to implement a directory-backed handle.
 
-foreign import ccall unsafe "seekdir"
-  c_seekdir :: Ptr () -> COff -> IO ()
+data DirDev = DirDev {
+  dirST :: !DirStreamB
+ ,dirSP :: !(IORef ContSP)} deriving (Typeable)
 
-foreign import ccall unsafe "telldir"
-  c_telldir :: Ptr () -> IO COff
-
--- Functions implementing a Handle, not exported.
-
--- Duplicate a handle. Find our position in the stream,
--- open a new DirStreamB for the same directory, seek to the
--- same position on the new stream. Dup2 is currently unsupported.
-
-dupDirStreamB :: DirStreamB -> IO DirStreamB
-
-dupDirStreamB (DirStreamB (dirp, name)) = do
-  ns@(DirStreamB (dirp', _)) <- openDirStreamB name
-  c_telldir dirp >>= c_seekdir dirp'
-  return ns
-
--- Seek on the handle is only supported to the absolute zero position.
-
-seekDirStreamB :: DirStreamB -> SeekMode -> Integer -> IO ()
-
-seekDirStreamB ds AbsoluteSeek 0 = rewindDirStreamB ds
-  
-
-seekDirStreamB (DirStreamB (dirp, name)) _ _ = ioError $
-  mkIOError illegalOperationErrorType
-            "Directory handle only seeks to 0"
-            Nothing
-            (Just name)
-
--- Instances of DirStreamB used to implement a directory-backed handle.
-
-instance IODevice DirStreamB where
-  ready _ _ _ = return True
+instance IODevice DirDev where
+  ready _ write _ = return (not write)
   devType _ = return Directory
-  close = closeDirStreamB
-  dup = dupDirStreamB
-  seek = seekDirStreamB
+  close = dirClose
   isSeekable _ = return True
 
+instance CSPIO DirDev where
+  getsp = readIORef . dirSP
+  setsp = writeIORef . dirSP
+  initsp (DirDev ds sp) = rewindDirStreamB ds >> return (ContReady (readdir ds))
+  bufsize = const 4096
+
+dirClose (DirDev ds sp) = do
+  modifyIORef sp (const $ ContErr $ mkIOError eofErrorType 
+                                              "Handle was closed" Nothing Nothing)
+  return ()
+
+-- Stream processor function. It ignores the blocking/non-blocking more flag as
+-- directory reads should not cause any delays on local dirs. It also ignores
+-- the advisory buffer size because only one directory entry is read at a time.
 -- A directory-backed handle provides a zero-delimited sequence of filenames (see #4317).
-{-
-dirBufferSize = 2048 -- arbitrarily chosen, but hopefully covers maximum filename length (255*5)
 
-instance BufferedIO DirStreamB where
-  newBuffer d b = newByteBuffer dirBufferSize ReadBuffer
-  fillReadBuffer = R.read
-  fillReadBuffer0 = R.readNonBlocking
+dot = C.pack "."
+dotdot = C.pack ".."
 
+readdir :: DirStreamB -> ContSPFun
 
-instance RawIO DirStreamB where
-  read d buf avl = do
-    bs@(I.PS ps s l) <- readDirStreamB d
-    case B.null bs of
-      True -> return 0
-      False -> do
-        let bl = B.length bs
-        I.memcpy buf (pss `plusPtr` s) bl
-        return bl
-    
--}
+readdir ds f x p a = do
+  b <- readDirStreamB ds                           -- get one entry
+  case B.null b of                                 -- check if end of stream
+    True -> return ContEOF                         -- if yes indicate EOF
+    False -> do
+      if b `elem` [dot, dotdot] 
+        then readdir ds f x p a                    -- skip dot and dotdot
+        else return $ ContBuff (C.snoc b '\000')   -- append zero byte
+                               (readdir ds)        -- and pass to the IO layer
 
