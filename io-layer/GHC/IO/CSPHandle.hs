@@ -79,12 +79,14 @@ type ContSPFun = Bool                  -- ^ True if blocking I/O
 -- 'ContReady' with proper continuation function (so that the next I/O operation works
 -- at the beginning of the stream). This method will also be called when repositioning
 -- the previously consumed stream to the beginning (the stream may even be in 'ContErr'
--- or 'ContEOF' state).
+-- or 'ContEOF' state). The 'initsp' method by default throws an exception on unsupported
+-- operation (as does the 'seek' method by default).
 
 class (IODevice a) => CSPIO a where
   getsp :: a -> IO ContSP
   setsp :: a -> ContSP -> IO ()
   initsp :: a -> IO ContSP
+  initsp _ = return $ ContErr unsupportedOperation
   bufsize :: a -> Int
 
 -- | Wrapper newtype for streamed reader devices.

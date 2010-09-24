@@ -20,7 +20,8 @@ module System.IO9.DirStream (
  ,rewindDirStreamB
  ,closeDirStreamB
  ,DirStreamB
- ,readDirStreamB) where
+ ,readDirStreamB
+ ,openDirHandle) where
 
 import Prelude hiding (catch)
 import Foreign.C
@@ -28,6 +29,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import Data.IORef
 import Data.Typeable
+import GHC.IO.Handle
 import GHC.IO.Device
 import GHC.IO.Buffer
 import GHC.IO.BufferedIO
@@ -163,4 +165,16 @@ readdir ds f x p a = do
         then readdir ds f x p a                    -- skip dot and dotdot
         else return $ ContBuff (C.snoc b '\000')   -- append zero byte
                                (readdir ds)        -- and pass to the IO layer
+
+-- | Open a handle to the given directory by name. It is not checked for being
+-- a directory here, sho should be checked prior.
+
+openDirHandle :: FilePath -> IO Handle
+
+openDirHandle dfp = do
+  ds <- openDirStreamB dfp
+  sp <- newIORef $ ContReady (readdir ds)
+  let dd = StreamReader $ DirDev ds sp
+  mkFileHandle dd dfp ReadMode Nothing nativeNewlineMode
+
 

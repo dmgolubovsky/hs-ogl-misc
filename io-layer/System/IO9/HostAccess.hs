@@ -28,6 +28,7 @@ import System.Posix.IO
 import System.Posix.Files
 import System.FilePath
 import System.IO9.Error
+import System.IO9.DirStream
 import qualified Data.Map as M
 
 -- | Create a device table using a map of tree names to host filesystem trees.
@@ -101,7 +102,7 @@ haopen tbl tmap da flg = do
   npth <- objpath tmap da (devpath da)
   st <- getFileStatus npth
   case isDirectory st of
-    True -> throwIO Eisdir
+    True -> openDirHandle npth
     False -> do
       let iom = omode2IOMode flg
       openFile npth iom

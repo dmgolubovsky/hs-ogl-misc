@@ -6,7 +6,9 @@ import Data.Char
 import Data.Word
 import Data.Bits
 import System.IO
+import Data.NineP
 import Data.NineP.Bits
+import Data.List.Split
 import System.FilePath
 import System.Directory
 import System.Environment
@@ -28,11 +30,6 @@ untilM p f = do
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
-  s <- openDirStreamB dir
-  untilM B.null $ do
-    b <- readDirStreamB s
-    putStrLn $ show b
-    return b
   dev <- devHost [(rootdir, "/")]
   att <- devAttach dev "/"
   putStrLn $ show att
@@ -40,8 +37,21 @@ main = do
   putStrLn $ show wlk
   putStrLn $ show (devqid wlk)
   h <- devOpen wlk c_OREAD
-  hGetContents h >>= putStrLn
+  case qid_typ (devqid wlk) .&. c_QTDIR of
+    0 -> printFile h
+    _ -> printDir h
 
+printFile h = do
+  hGetContents h >>= putStrLn
+  return ()
+
+
+printDir s = do
+  untilM (==True) $ do
+    b <- hGetLine s
+    mapM putStrLn $ wordsBy (==(chr 0)) b
+    hIsEOF s
+  return ()
  
 
 {-
