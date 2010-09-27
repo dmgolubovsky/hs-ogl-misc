@@ -14,6 +14,8 @@
 
 module Data.NineP.Posix (
   stat2Qid
+ ,stat2Mode
+ ,stat2Stat
  ,omode2IOMode
 ) where
 
@@ -24,6 +26,8 @@ import Data.NineP.Bits
 import System.IO
 import System.Posix.IO
 import System.Posix.Files
+import System.Posix.Types
+import System.Posix.User
 
 -- | Build a Qid from Posix file status.
 
@@ -52,4 +56,58 @@ omode2IOMode m = f (m .&. (complement (c_OCEXEC .|. c_ORCLOSE)))
             | m == c_OWRITE = AppendMode
             | m == c_ORDWR = ReadWriteMode
             | otherwise = ReadMode
+
+
+-- | Build a filemode mask in terms of the 9P definition.
+
+stat2Mode :: FileStatus -> Word32
+
+stat2Mode st =
+  let umode = fileMode st
+      oshift = 6
+      gshift = 3
+      wshift = 0
+      permmap = [(ownerReadMode, c_DMREAD `shiftL` oshift)
+                ,(ownerWriteMode, c_DMWRITE `shiftL` oshift)
+                ,(ownerExecuteMode, c_DMEXEC `shiftL` oshift)
+                ,(groupReadMode, c_DMREAD `shiftL` gshift)
+                ,(groupWriteMode, c_DMWRITE `shiftL` gshift)
+                ,(groupExecuteMode, c_DMEXEC `shiftL` gshift)
+                ,(otherReadMode, c_DMREAD `shiftL` wshift)
+                ,(otherWriteMode, c_DMWRITE `shiftL` wshift)
+                ,(otherExecuteMode, c_DMEXEC `shiftL` wshift)
+                ,(directoryMode, c_DMDIR)]
+      nmode = foldl mbit 0 permmap
+      mbit acc (umb, nmb) = case umb .&. umode of
+        0 -> acc
+        _ -> acc .|. nmb
+  in  nmode
+
+-- Convert a Unix stat record to 9P2000 stat record.
+
+stat2Stat :: FileStatus -> FilePath -> IO Stat
+
+stat2Stat st fname = do
+  funame <- (getUserEntryForID (fileOwner st) >>= return . userName) `catch`
+              (\_ -> return . show $ fileOwner st)
+  fgroup <- (getGroupEntryForID (fileGroup st) >>= return . groupName) `catch`
+              (\_ -> return . show $ fileGroup st)
+  let qid = stat2Qid st
+      mode = stat2Mode st
+      ret = Stat {
+        st_typ = 0    -- these are not filled in by the driver, but
+       ,st_dev = 0    -- rather by the surrounding framework
+       ,st_qid = qid
+       ,st_mode = mode
+       ,st_atime = round $ realToFrac $ accessTime st
+       ,st_mtime = round $ realToFrac $ modificationTime st
+       ,st_length = fromIntegral $ fileSize st
+       ,st_name = fname
+       ,st_uid = funame
+       ,st_gid = fgroup
+       ,st_muid = funame
+      }
+  return ret
+
+
 
