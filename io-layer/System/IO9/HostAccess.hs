@@ -23,6 +23,7 @@ import Data.Word
 import Data.List
 import Control.Monad
 import Control.Exception
+import Data.NineP
 import Data.NineP.Bits
 import Data.NineP.Posix
 import System.IO9.DevLayer
@@ -56,6 +57,7 @@ devHost trees = do
       devtbl = (defDevTable 'Z') {
         attach_ = haattach devtbl trmap
        ,open_ = haopen devtbl trmap
+       ,stat_ = hastat devtbl trmap
        ,walk_ = hawalk devtbl trmap} 
   return devtbl
 
@@ -115,7 +117,18 @@ haopen tbl tmap da flg = do
     False -> do
       let iom = omode2IOMode flg
       openFile npth iom
-  
+
+-- Given an attachment dessriptor, return object status.  
+
+hastat :: DevTable -> M.Map FilePath FilePath -> DevAttach -> IO Stat
+
+hastat tbl tmap da = do
+  npth <- objpath tmap da (devpath da)
+  st <- getFileStatus npth
+  let np = case devpath da of
+              "" -> "/"
+              _ -> devpath da
+  stat2Stat st (head $ reverse $ splitPath np)
 
 -- Given an attachment descriptor, produce the host file path to the object described.
 

@@ -20,6 +20,7 @@ module System.IO9.DevLayer (
  ,devAttach
  ,devWalk
  ,devOpen
+ ,devStat
 ) where
 
 import Data.Word
@@ -43,10 +44,10 @@ data DevTable = DevTable {
    devchar :: Char                                   -- ^ Device character
   ,attach_ :: FilePath -> IO DevAttach               -- ^ Attach a device with the given root
   ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
-                                                     -- (file or directory) - only one level
+                                                     --   (file or directory) any # levels
   ,open_ :: DevAttach -> Word8 -> IO Handle          -- ^ Open a handle on the given object
   ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO DevAttach -- ^ Create a new object
-  ,stat_ :: DevAttach -> IO FileStatus               -- ^ Obtain object attributes
+  ,stat_ :: DevAttach -> IO Stat                     -- ^ Obtain object attributes
   ,wstat_ :: DevAttach -> FileStatus -> IO DevAttach -- ^ Change some object attributes
 }
 
@@ -97,6 +98,13 @@ devWalk da fp = walk' da (normalise fp) where
 devOpen :: DevAttach -> Word8 -> IO Handle
 
 devOpen da = open_ (devtbl da) da
+
+-- | Obtain a 'Stat' structure for the given attachment descriptor. Note that the structure
+-- returned is not a Posix file status but rather 9P2000 file status.
+
+devStat :: DevAttach -> IO Stat
+
+devStat da = stat_ (devtbl da) da
 
 -- | Default device table with all device functions throwing an error.
 

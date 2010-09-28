@@ -36,6 +36,7 @@ main = do
   wlk <- devWalk att dir
   putStrLn $ show wlk
   putStrLn $ show (devqid wlk)
+  devStat wlk >>= putStrLn . show
   h <- devOpen wlk c_OREAD
   case qid_typ (devqid wlk) .&. c_QTDIR of
     0 -> printFile h
