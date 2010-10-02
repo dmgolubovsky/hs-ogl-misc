@@ -47,13 +47,14 @@ data DevTable = DevTable {
                                                      --   (file or directory) any # levels
   ,open_ :: DevAttach -> Word8 -> IO Handle          -- ^ Open a handle on the given object
   ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO DevAttach -- ^ Create a new object
+  ,remove_ :: DevAttach -> IO ()                     -- ^ Remove the object referred to by the
+                                                     --   'DevAttach' provided
   ,stat_ :: DevAttach -> IO Stat                     -- ^ Obtain object attributes
   ,wstat_ :: DevAttach -> FileStatus -> IO DevAttach -- ^ Change some object attributes
 }
 
 -- | Device attachment. This data structure represents a file or a directory
--- on the given device. It holds a reference to the attached device, however
--- device specific data is completely inaccessible due to forall definition.
+-- on the given device.
 
 data DevAttach = DevAttach {
    devtbl :: DevTable                            -- ^ Device which created this 'DevAttach'
@@ -115,6 +116,7 @@ defDevTable c = DevTable { devchar = c
                           ,walk_ = \_ _ -> throwIO Eshutdown
                           ,open_ = \_ _ -> throwIO Eshutdown
                           ,create_ = \_ _ _ _ -> throwIO Eshutdown
+                          ,remove_ = \_ -> throwIO Eshutdown
                           ,stat_ = \_ -> throwIO Eshutdown
                           ,wstat_ = \_ _ -> throwIO Eshutdown}
 

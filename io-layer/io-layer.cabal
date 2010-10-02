@@ -22,7 +22,8 @@ exposed-modules:
     Data.NineP.Bits, Data.NineP.Posix, 
     GHC.IO.CSPHandle, 
     System.IO9.Error, System.IO9.DirStream,
-    System.IO9.NameSpace.Pure, System.IO9.DevLayer, System.IO9.HostAccess
+    System.IO9.DevLayer, System.IO9.NameSpaceT,
+    System.IO9.HostAccess
     
 
 other-modules:
