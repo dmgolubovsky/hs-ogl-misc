@@ -18,8 +18,12 @@
 module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
+ ,initNS
  ,showNS
+ ,dbgPrint
  ,bindPath
+ ,EvalPath
+ ,evalPath
 ) where
 
 import GHC.IO (catchException)
@@ -94,6 +98,8 @@ data UnionPoint = UnionPoint UnionDir FilePath
 
 type NameSpace = M.Map FilePath UnionPoint
 
+type DevMap = M.Map Char DevTable
+
 -- | Show a namespace as a sequence of Plan9 bind (1) commands.
 
 showNS :: (MonadIO m) => NameSpaceT m [String]
@@ -101,19 +107,32 @@ showNS :: (MonadIO m) => NameSpaceT m [String]
 showNS = NameSpaceT $ do
   asks nspace >>= liftIO . readMVar >>= return . concatMap showUP . M.toList where
     showUP (fp, (UnionPoint (UnionDir dl) _)) = map onebind (DL.toList dl) where
-      onebind bd = "bind " ++ flgb (dirfl bd) ++ flgc (dircr bd)  ++ dirfp bd ++ fp
+      onebind bd = "bind " ++ flgb (dirfl bd) ++ flgc (dircr bd)  ++ dirfp bd ++ " " ++ fp
       flgb (BindBefore _) = "-b "
       flgb (BindAfter _) = "-a "
       flgb  BindRepl = ""
       flgc  True = "-c "
       flgc  False = ""
   
+-- | Run the "init" program with the given device list and empty namespace
+-- (it is expected that it builds the namespace from scratch).
+
+initNS :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
+
+initNS dts nsi = do
+  mv <- liftIO $ newMVar (M.empty)
+  let dvm = M.fromList $ zip (map devchar dts) dts
+      env = NsEnv {
+        kdtbl = dvm
+       ,nspace = mv
+      }
+  runNameSpaceT nsi `runReaderT` env
 
 -- Namespace execution environment consists of the kernel devices table
 -- (immutable), and a namespace itself (mutable transactional variable).
 
 data NsEnv = NsEnv {
-   kdtbl :: M.Map Char DevTable
+   kdtbl :: DevMap
   ,nspace :: MVar NameSpace
 }
 
@@ -159,6 +178,35 @@ bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> NameSp
 
 bind_common _ _ _ _ _ = fail "not implemented"
 
+-- | A data type to represent an evaluated path.
+
+data EvalPath = EvalPath {
+  epAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
+ ,epCanon :: FilePath                   -- ^ Canonicalized (with dot-elements removed) path
+} deriving (Show)
+
+-- | Evaluate a file path (absolute or device) using the current namespace. The function will try
+-- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
+-- of the path off. If successful, an attachment descriptor for the path is returned. Otherwise
+-- the function fails (e. g. if a device driver returns an error message).
+
+evalPath :: (MonadIO m) => FilePath -> NameSpaceT m EvalPath
+
+evalPath fp | not (isAbsolute fp || isDevice fp) =
+  NameSpaceT $ liftIO $ throw Efilename
+
+evalPath fp = NameSpaceT $ do
+  ns <- asks nspace >>= liftIO . readMVar
+  kd <- asks kdtbl
+  eval_common fp `runReaderT` (kd, ns)
+
+-- Common function for path evaluation use by both bindPath and evalPath.
+-- It operates on the immutable copy of the namespace, thus it uses a separate
+-- reader transformer.
+
+eval_common :: (MonadIO m) => FilePath -> ReaderT (DevMap, NameSpace) m EvalPath
+
+eval_common _ = fail "not implemented"
 
 -- Do something with a NameSpace, taking care of exceptions.
 -- A current NameSpace is referred to by a MVar, and thus can be shared among several
@@ -211,4 +259,8 @@ treeOf :: FilePath -> FilePath
 treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in tree
 treeOf _ = ""
 
+
+dbgPrint :: MonadIO m => String -> NameSpaceT m ()
+
+dbgPrint s = NameSpaceT $ liftIO $ putStrLn s
 

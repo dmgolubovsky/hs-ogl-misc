@@ -16,6 +16,7 @@ import Control.Monad.Trans
 import Control.Monad.State
 import System.IO9.DevLayer
 import System.IO9.HostAccess
+import System.IO9.NameSpaceT
 
 import System.IO9.DirStream
 import qualified Data.ByteString as B
@@ -31,6 +32,15 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
+  initNS [dev] $ do
+    dbgPrint "NameSpace"
+    bindPath BindRepl "#Z" "/"
+    ns <- showNS
+    mapM dbgPrint ns
+    return ()
+
+
+{-
   att <- devAttach dev "/"
   putStrLn $ show att
   wlk <- devWalk att dir
@@ -41,6 +51,7 @@ main = do
   case qid_typ (devqid wlk) .&. c_QTDIR of
     0 -> printFile h
     _ -> printDir h
+-}
 
 printFile h = do
   hGetContents h >>= putStrLn
