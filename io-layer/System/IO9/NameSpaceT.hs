@@ -176,7 +176,19 @@ bindPath fl new old = NameSpaceT $ do
 
 bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> NameSpace -> IO NameSpace
 
-bind_common _ _ _ _ _ = fail "not implemented"
+bind_common fl new old dtb ns = do
+  let evalpath fp = eval_common fp `runReaderT` (dtb, ns)
+  epnew <- evalpath new
+  epold <- evalpath old
+  let norm = normalise $ epCanon epold ++ "/"
+      oldpath = show $ epAttach epold
+      newpath = show $ epAttach epnew
+      uds = unionDir oldpath
+      udx = addUnion uds newpath fl
+      up = UnionPoint udx oldpath
+      modx _ (UnionPoint ud fp) = UnionPoint (addUnion ud newpath fl) fp
+      ns' = M.insertWith modx norm up ns
+  return ns
 
 -- | A data type to represent an evaluated path.
 
@@ -198,15 +210,59 @@ evalPath fp | not (isAbsolute fp || isDevice fp) =
 evalPath fp = NameSpaceT $ do
   ns <- asks nspace >>= liftIO . readMVar
   kd <- asks kdtbl
-  eval_common fp `runReaderT` (kd, ns)
+  liftIO $ eval_common fp `runReaderT` (kd, ns)
 
 -- Common function for path evaluation use by both bindPath and evalPath.
 -- It operates on the immutable copy of the namespace, thus it uses a separate
 -- reader transformer.
 
-eval_common :: (MonadIO m) => FilePath -> ReaderT (DevMap, NameSpace) m EvalPath
+type EvalM = ReaderT (DevMap, NameSpace) IO
 
-eval_common _ = fail "not implemented"
+eval_common :: FilePath -> EvalM EvalPath
+
+eval_common fp = eval_root (splitPath fp) []
+
+-- Root element. Look it up in the namespace. If not found, fail. If found,
+-- place it on the evaluated path, remove from the unevaluated part, recurse. 
+-- History must be empty at this point.
+
+eval_root :: [FilePath] -> [FilePath] -> EvalM EvalPath
+
+eval_root ("/" : rawps) _ = do
+  rootd <- asks snd >>= findroot
+  eval_root (rootd : rawps) ["/"]
+
+eval_root _ _ = liftIO $ throwIO Efilename
+
+
+-- Find the root entry in the namespace. The root entry is special that it always has
+-- one directory bound. So, only a single entry is returned (in the case of multiple
+-- directories unioned under the root entry, head of the list is returned). If no
+-- root entry found, fail.
+
+findroot :: NameSpace -> EvalM FilePath
+
+findroot ns = do
+  fps <- findunion "/" ns
+  case fps of
+    (fp:_) | isDevice fp -> return fp
+    _ -> liftIO $ throwIO $ OtherError "eval: no root binding in the namespace"
+
+-- Find all files/directories bound at the given union point. If the namespace provided
+-- does not contain the union point provided, return an empty list.
+-- No normalization or canonicalization of the union point path is done here,
+-- as well as of the union point contents.
+
+findunion :: FilePath -> NameSpace -> EvalM [FilePath]
+
+findunion fp ns = do
+  let fp' = if fp == "/" then fp else normalise (fp ++ "/")
+      up = M.lookup fp' ns
+  case up of
+    Just (UnionPoint ud _) -> return . map dirfp . DL.toList $ unDir ud 
+    _ -> return []
+
+
 
 -- Do something with a NameSpace, taking care of exceptions.
 -- A current NameSpace is referred to by a MVar, and thus can be shared among several
