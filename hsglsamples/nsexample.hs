@@ -35,6 +35,7 @@ main = do
   initNS [dev] $ do
     dbgPrint "NameSpace"
     bindPath BindRepl "#Z" "/"
+    bindPath (BindBefore True) "/m2" "/m1"
     ns <- showNS
     mapM dbgPrint ns
     return ()

@@ -22,13 +22,16 @@ module System.IO9.NameSpaceT (
  ,showNS
  ,dbgPrint
  ,bindPath
- ,EvalPath
+ ,PathHandle (phCanon)
+ ,FileHandle (fhCanon)
  ,evalPath
 ) where
 
 import GHC.IO (catchException)
+import GHC.IO.Handle
 import Data.Char
 import Control.Monad
+import Control.Monad.Error
 import Control.Monad.Trans
 import Control.Monad.Reader
 import Control.Concurrent
@@ -180,9 +183,9 @@ bind_common fl new old dtb ns = do
   let evalpath fp = eval_common fp `runReaderT` (dtb, ns)
   epnew <- evalpath new
   epold <- evalpath old
-  let norm = normalise $ epCanon epold ++ "/"
-      oldpath = show $ epAttach epold
-      newpath = show $ epAttach epnew
+  let norm = normalise $ phCanon epold ++ "/"
+      oldpath = show $ phAttach epold
+      newpath = show $ phAttach epnew
       uds = unionDir oldpath
       udx = addUnion uds newpath fl
       up = UnionPoint udx oldpath
@@ -190,19 +193,27 @@ bind_common fl new old dtb ns = do
       ns' = M.insertWith modx norm up ns
   return ns
 
--- | A data type to represent an evaluated path.
+-- | A semi-opaque data type to represent an evaluated path.
 
-data EvalPath = EvalPath {
-  epAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
- ,epCanon :: FilePath                   -- ^ Canonicalized (with dot-elements removed) path
+data PathHandle = PathHandle {
+  phAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
+ ,phCanon :: FilePath                   -- ^ Canonicalized (with dot-elements removed) path
 } deriving (Show)
+
+-- | A semi-opaque data structure to represent an open file.
+
+data FileHandle = FileHandle {
+  fhHandle :: Handle                    -- ^ A handle to an open file as provided by GHC I/O
+ ,fhAttach :: DevAttach                 -- ^ Attachment descriptor for the file
+ ,fhCanon :: FilePath                   -- ^ Canonicalized path to the file
+}
 
 -- | Evaluate a file path (absolute or device) using the current namespace. The function will try
 -- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
 -- of the path off. If successful, an attachment descriptor for the path is returned. Otherwise
 -- the function fails (e. g. if a device driver returns an error message).
 
-evalPath :: (MonadIO m) => FilePath -> NameSpaceT m EvalPath
+evalPath :: (MonadIO m) => FilePath -> NameSpaceT m PathHandle
 
 evalPath fp | not (isAbsolute fp || isDevice fp) =
   NameSpaceT $ liftIO $ throw Efilename
@@ -218,7 +229,7 @@ evalPath fp = NameSpaceT $ do
 
 type EvalM = ReaderT (DevMap, NameSpace) IO
 
-eval_common :: FilePath -> EvalM EvalPath
+eval_common :: FilePath -> EvalM PathHandle
 
 eval_common fp = eval_root (splitPath fp) []
 
@@ -226,14 +237,89 @@ eval_common fp = eval_root (splitPath fp) []
 -- place it on the evaluated path, remove from the unevaluated part, recurse. 
 -- History must be empty at this point.
 
-eval_root :: [FilePath] -> [FilePath] -> EvalM EvalPath
+eval_root :: [FilePath] -> [FilePath] -> EvalM PathHandle
 
 eval_root ("/" : rawps) _ = do
   rootd <- asks snd >>= findroot
   eval_root (rootd : rawps) ["/"]
 
+-- If the path to evaluate is indeed a device path, attach the given device and tree
+-- and proceed as if it was the root element.
+
+eval_root (dvp : rawps) xps | isDevice dvp = do
+  da <- attdev dvp
+  let orig = head (xps ++ [dvp])
+  eval_step da rawps [orig] [dvp]
+
 eval_root _ _ = liftIO $ throwIO Efilename
 
+-- Evaluate the rest of the path step-wise.
+
+eval_step :: DevAttach -> [FilePath] -> [FilePath] -> [FilePath] -> EvalM PathHandle
+
+-- Entire raw path consumed: evaluation complete.
+
+eval_step da [] orig eval = return PathHandle {
+  phAttach = da
+ ,phCanon = joinPath eval}
+
+-- Dot on the path: skip it.
+
+eval_step da ("./" : rawps) orig eval = eval_step da rawps orig eval
+eval_step da ("." : rawps) orig eval = eval_step da rawps orig eval
+
+-- DotDot: use the logic from http://doc.cat-v.org/plan_9/4th_edition/papers/lexnames
+-- If original path consists of only one element, ignore dotdot.
+-- If evaluated path consists of only one element, fail: this is an internal error.
+-- Take one element off the original path. Lookup the namespace if the resulting original
+-- path marks any of the union points. If it does, retrieve its evaluated counterpart:
+-- parent may reside on a different filesystem than child. Substitute the retrieved evaluated
+-- path to the evaluated path and do the next step.
+-- Otherwise just the original path minus one element and evaluated path minus one element.
+-- In either case, new FID has to be obtained fo the new evaluated path.
+
+eval_step da ("../" : rawps) orig eval = eval_step da (".." : rawps) orig eval
+
+eval_step da (".." : rawps) [orig] eval = eval_step da rawps [orig] eval
+
+eval_step da (".." : rawps) orig [eval] = do
+  throw $ OtherError $ "internal error: .. with singleton evaluated path at " ++ joinPath orig
+
+eval_step da (".." : rawps) orig eval = do
+  let chop = reverse . tail . reverse                     -- chop the last element off
+      origp = chop orig
+      evalp = chop eval
+  up <- asks snd >>= return . M.lookup (joinPath origp)
+  let neval = case up of
+        Just (UnionPoint _ fp) -> splitPath fp
+        _ -> evalp
+  nda <- attdev (head neval)
+  wda <- liftIO $ devWalk nda (joinPath $ tail neval)
+  eval_step wda rawps origp neval
+
+-- General case. Look up the already evaluated path in the namespace (resulting in
+-- either single or multiple path). One of them may be the one we already have a DevAttach for
+-- (that is, same as eval). Try to walk all of these paths to the next element of the
+-- path to be evaluated until successful (if not, this is an error). Once the right path 
+-- has been found, replace eval with it, and repeat until the path to evaluate is entirely
+-- consumed.
+
+eval_step da (rawp : rawps) orig eval = do
+  let jeval = joinPath eval
+      jorig = joinPath orig
+      nrawp = normalise (rawp ++ "/")
+  undirs <- asks snd >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
+  ress@(rfp, rda) <- foldr mplus (throw Enonexist) $ 
+    flip map undirs $ \fp -> do
+      (zfp, zda, zeval) <- case (fp == jeval) of
+        True -> return ([nrawp], da, eval ++ [nrawp])
+        _ -> do
+          xda <- attdev fp
+          let tfp = tail (splitPath fp) ++ [nrawp]
+          return (tfp, xda, splitPath fp ++ [nrawp])
+      wda <- liftIO $ devWalk zda (joinPath zfp)
+      return (zeval, wda)
+  eval_step rda rawps (orig ++ [rawp]) rfp    
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
@@ -292,6 +378,21 @@ do_operation mv f = do
         _otherwise ->
             throwIO e
 
+-- Attach a device using the given path (must be a device path)
+
+attdev :: FilePath -> EvalM DevAttach
+
+attdev fp | not (isDevice fp) = liftIO $ throwIO Ebadsharp
+
+attdev fp = do
+  liftIO $ putStrLn $ "attdev: " ++ fp
+  kt <- asks fst
+  let mbdt = M.lookup (deviceOf fp) kt
+  liftIO $ case mbdt of
+    Nothing -> throwIO Ebadsharp
+    Just dt -> devAttach dt (treeOf fp)
+  
+
 -- | Return 'True' is the given path is a device path (starts with #).
 
 isDevice :: FilePath -> Bool
@@ -312,7 +413,9 @@ deviceOf _ = chr 0
 
 treeOf :: FilePath -> FilePath
 
-treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in tree
+treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in case tree of
+  "" -> "/"
+  _ -> tree
 treeOf _ = ""
 
 
