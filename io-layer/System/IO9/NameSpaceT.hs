@@ -19,7 +19,6 @@ module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
  ,initNS
- ,showNS
  ,dbgPrint
  ,bindPath
  ,PathHandle (phCanon)
@@ -58,7 +57,7 @@ instance (Eq a) => Eq (DL.DList a) where
 -- are stored in the namespace map as values.
 
 data BoundDir = BoundDir {
-  dirfp :: FilePath                -- ^ Absolute path to the actual directory
+  dirph :: PathHandle              -- ^ Actual directory object information
  ,dirfl :: BindFlag                -- ^ Copy of the bind flags as they were supplied
  ,dircr :: Bool                    -- ^ 'True' if creation of files is allowed
 } deriving (Eq, Ord, Show)
@@ -80,43 +79,29 @@ newtype UnionDir = UnionDir {unDir :: DL.DList BoundDir} deriving (Eq, Ord, Show
 -- | Create an union directory containing a single directory. file creation
 -- is enabled by default.
 
-unionDir :: FilePath -> UnionDir
-unionDir fp = UnionDir (DL.singleton BoundDir {dirfp = fp, dirfl = BindRepl, dircr = True})
+unionDir :: PathHandle -> UnionDir
+unionDir ph = UnionDir (DL.singleton BoundDir {dirph = ph, dirfl = BindRepl, dircr = True})
 
 -- | Bind an actual directory at the given union point.
 
 addUnion  :: UnionDir              -- ^ The union point where to bind a directory
-          -> FilePath              -- ^ Actual file path to bind (not checked for existence)
+          -> PathHandle            -- ^ Actual file path to bind (not checked for existence)
           -> BindFlag              -- ^ Bind mode
           -> UnionDir              -- ^ Updated union point.
-addUnion (UnionDir dl) fp bf = case bf of
-  BindRepl -> unionDir fp
-  BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirfp = fp, dirfl = bf, dircr = cr}) dl
-  BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirfp = fp, dirfl = bf, dircr = cr})
+addUnion (UnionDir dl) ph bf = case bf of
+  BindRepl -> unionDir ph
+  BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirph = ph, dirfl = bf, dircr = cr}) dl
+  BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirph = ph, dirfl = bf, dircr = cr})
 
 -- Namespace is a map where evaluable file paths are keys, and evaluated file paths along with
 -- union points are values.
 
-data UnionPoint = UnionPoint UnionDir FilePath
+data UnionPoint = UnionPoint UnionDir FilePath deriving (Show)
 
 type NameSpace = M.Map FilePath UnionPoint
 
 type DevMap = M.Map Char DevTable
 
--- | Show a namespace as a sequence of Plan9 bind (1) commands.
-
-showNS :: (MonadIO m) => NameSpaceT m [String]
-
-showNS = NameSpaceT $ do
-  asks nspace >>= liftIO . readMVar >>= return . concatMap showUP . M.toList where
-    showUP (fp, (UnionPoint (UnionDir dl) _)) = map onebind (DL.toList dl) where
-      onebind bd = "bind " ++ flgb (dirfl bd) ++ flgc (dircr bd)  ++ dirfp bd ++ " " ++ fp
-      flgb (BindBefore _) = "-b "
-      flgb (BindAfter _) = "-a "
-      flgb  BindRepl = ""
-      flgc  True = "-c "
-      flgc  False = ""
-  
 -- | Run the "init" program with the given device list and empty namespace
 -- (it is expected that it builds the namespace from scratch).
 
@@ -168,7 +153,10 @@ bindPath fl new old | old == "/" && isDevice new = NameSpaceT $ do
   dtb <- asks kdtbl
   liftIO $ withNameSpace mv $ \ns -> case M.null ns of
     True -> do
-      let ud = unionDir new
+      let newnorm = normalise new
+      attnew <- attdev newnorm `runReaderT` (dtb, ns)
+      let phnew = PathHandle {phAttach = attnew, phCanon = newnorm}
+          ud = unionDir phnew
       return $ M.insert old (UnionPoint ud new) ns
     False -> bind_common fl new old dtb ns
 
@@ -186,12 +174,12 @@ bind_common fl new old dtb ns = do
   let norm = normalise $ phCanon epold ++ "/"
       oldpath = show $ phAttach epold
       newpath = show $ phAttach epnew
-      uds = unionDir oldpath
-      udx = addUnion uds newpath fl
+      uds = unionDir epold
+      udx = addUnion uds epnew fl
       up = UnionPoint udx oldpath
-      modx _ (UnionPoint ud fp) = UnionPoint (addUnion ud newpath fl) fp
+      modx _ (UnionPoint ud fp) = UnionPoint (addUnion ud epnew fl) fp
       ns' = M.insertWith modx norm up ns
-  return ns
+  return ns'
 
 -- | A semi-opaque data type to represent an evaluated path.
 
@@ -199,6 +187,12 @@ data PathHandle = PathHandle {
   phAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
  ,phCanon :: FilePath                   -- ^ Canonicalized (with dot-elements removed) path
 } deriving (Show)
+
+instance Eq PathHandle where
+  p1 == p2 = phCanon p1 == phCanon p2
+
+instance Ord PathHandle where
+  compare p1 p2 = compare (phCanon p1) (phCanon p2)
 
 -- | A semi-opaque data structure to represent an open file.
 
@@ -261,7 +255,7 @@ eval_step :: DevAttach -> [FilePath] -> [FilePath] -> [FilePath] -> EvalM PathHa
 
 eval_step da [] orig eval = return PathHandle {
   phAttach = da
- ,phCanon = joinPath eval}
+ ,phCanon = joinPath orig}
 
 -- Dot on the path: skip it.
 
@@ -308,18 +302,12 @@ eval_step da (rawp : rawps) orig eval = do
   let jeval = joinPath eval
       jorig = joinPath orig
       nrawp = normalise (rawp ++ "/")
-  undirs <- asks snd >>= findunion jorig >>= \ps -> return (if null ps then [jeval] else ps)
-  ress@(rfp, rda) <- foldr mplus (throw Enonexist) $ 
-    flip map undirs $ \fp -> do
-      (zfp, zda, zeval) <- case (fp == jeval) of
-        True -> return ([nrawp], da, eval ++ [nrawp])
-        _ -> do
-          xda <- attdev fp
-          let tfp = tail (splitPath fp) ++ [nrawp]
-          return (tfp, xda, splitPath fp ++ [nrawp])
-      wda <- liftIO $ devWalk zda (joinPath zfp)
-      return (zeval, wda)
-  eval_step rda rawps (orig ++ [rawp]) rfp    
+  undirs <- asks snd >>= findunion jorig >>= 
+    \ps -> return (if null ps then [da] else map phAttach ps)
+  foldr mplus (throw Enonexist) $ flip map undirs $ \dda -> do
+    wda <- liftIO $ (devWalk dda nrawp `catchException` (\(e :: NineError) -> fail ""))
+    eval_step wda rawps (orig ++ [rawp]) (eval ++ [rawp])
+
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
@@ -331,7 +319,7 @@ findroot :: NameSpace -> EvalM FilePath
 findroot ns = do
   fps <- findunion "/" ns
   case fps of
-    (fp:_) | isDevice fp -> return fp
+    (PathHandle {phCanon = fp}:_) | isDevice fp -> return fp
     _ -> liftIO $ throwIO $ OtherError "eval: no root binding in the namespace"
 
 -- Find all files/directories bound at the given union point. If the namespace provided
@@ -339,13 +327,13 @@ findroot ns = do
 -- No normalization or canonicalization of the union point path is done here,
 -- as well as of the union point contents.
 
-findunion :: FilePath -> NameSpace -> EvalM [FilePath]
+findunion :: FilePath -> NameSpace -> EvalM [PathHandle]
 
 findunion fp ns = do
   let fp' = if fp == "/" then fp else normalise (fp ++ "/")
       up = M.lookup fp' ns
   case up of
-    Just (UnionPoint ud _) -> return . map dirfp . DL.toList $ unDir ud 
+    Just (UnionPoint ud _) -> return . map dirph . DL.toList $ unDir ud 
     _ -> return []
 
 
@@ -385,7 +373,6 @@ attdev :: FilePath -> EvalM DevAttach
 attdev fp | not (isDevice fp) = liftIO $ throwIO Ebadsharp
 
 attdev fp = do
-  liftIO $ putStrLn $ "attdev: " ++ fp
   kt <- asks fst
   let mbdt = M.lookup (deviceOf fp) kt
   liftIO $ case mbdt of

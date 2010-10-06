@@ -36,8 +36,9 @@ main = do
     dbgPrint "NameSpace"
     bindPath BindRepl "#Z" "/"
     bindPath (BindBefore True) "/m2" "/m1"
-    ns <- showNS
-    mapM dbgPrint ns
+    dbgPrint "Begin"
+    ph <- evalPath dir
+    dbgPrint $ show ph
     return ()
 
 
