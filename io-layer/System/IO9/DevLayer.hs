@@ -21,6 +21,7 @@ module System.IO9.DevLayer (
  ,devWalk
  ,devOpen
  ,devStat
+ ,isDevice
 ) where
 
 import Data.Word
@@ -46,7 +47,7 @@ data DevTable = DevTable {
   ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
                                                      --   (file or directory) any # levels
   ,open_ :: DevAttach -> Word8 -> IO Handle          -- ^ Open a handle on the given object
-  ,create_ :: DevAttach -> FilePath -> Word32 -> Word8 -> IO DevAttach -- ^ Create a new object
+  ,create_ :: DevAttach -> FilePath -> Word32 -> IO DevAttach -- ^ Create a new object, w/o opening
   ,remove_ :: DevAttach -> IO ()                     -- ^ Remove the object referred to by the
                                                      --   'DevAttach' provided
   ,stat_ :: DevAttach -> IO Stat                     -- ^ Obtain object attributes
@@ -115,9 +116,16 @@ defDevTable c = DevTable { devchar = c
                           ,attach_ = \_ -> throwIO Eshutdown
                           ,walk_ = \_ _ -> throwIO Eshutdown
                           ,open_ = \_ _ -> throwIO Eshutdown
-                          ,create_ = \_ _ _ _ -> throwIO Eshutdown
+                          ,create_ = \_ _ _ -> throwIO Eshutdown
                           ,remove_ = \_ -> throwIO Eshutdown
                           ,stat_ = \_ -> throwIO Eshutdown
                           ,wstat_ = \_ _ -> throwIO Eshutdown}
+
+-- | Return 'True' is the given path is a device path (starts with #).
+
+isDevice :: FilePath -> Bool
+
+isDevice ('#':_) = True
+isDevice _ = False
 
 

@@ -380,13 +380,6 @@ attdev fp = do
     Just dt -> devAttach dt (treeOf fp)
   
 
--- | Return 'True' is the given path is a device path (starts with #).
-
-isDevice :: FilePath -> Bool
-
-isDevice ('#':_) = True
-isDevice _ = False
-
 -- | Extract the device letter (if any) from the path. If this is not a device path,
 -- the 0 character is returned.
 

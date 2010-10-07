@@ -14,7 +14,8 @@
 ------------------------------------------------------------------
 
 module Data.NineP.Bits (
-  c_DMAPPEND
+  calcPerm
+ ,c_DMAPPEND
  ,c_DMAUTH
  ,c_DMDEVICE
  ,c_DMDIR
@@ -49,6 +50,19 @@ module Data.NineP.Bits (
 
 import Data.Word
 import Data.Bits
+
+-- | Calculate permissions of a file or directory being created, as described
+-- in man (5) open <http://man.cat-v.org/plan_9/5/open>. The c_DMDIR bit
+-- in the new object permissions affects whether the rule for a file or a directory
+-- is being applied.
+
+calcPerm :: Word32                     -- ^ new object permissions
+         -> Word32                     -- ^ directory permissions
+         -> Word32                     -- ^ calculated permissions
+
+calcPerm newperm dirperm = case newperm .&. c_DMDIR of
+  0 -> newperm .&. (complement 0666 .|. (dirperm .&. 0666))
+  _ -> newperm .&. (complement 0777 .|. (dirperm .&. 0777))
 
 -- | A special FID value (~ 0) to use in the attach message without authentication, and
 -- (as extension to the existing 9P2000 specification) in the clunk message to clunk all

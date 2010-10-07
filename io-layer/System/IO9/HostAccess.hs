@@ -30,6 +30,7 @@ import System.IO9.DevLayer
 import System.IO
 import System.Posix.IO
 import System.Posix.Files
+import qualified System.Posix.Directory as D
 import System.FilePath
 import System.Directory
 import System.IO9.Error
@@ -58,6 +59,7 @@ devHost trees = do
         attach_ = haattach devtbl trmap
        ,open_ = haopen devtbl trmap
        ,stat_ = hastat devtbl trmap
+       ,create_ = hacreate devtbl trmap
        ,walk_ = hawalk devtbl trmap} 
   return devtbl
 
@@ -129,6 +131,37 @@ hastat tbl tmap da = do
               "" -> "/"
               _ -> devpath da
   stat2Stat st (head $ reverse $ splitPath np)
+
+-- Create a new object (file or directory) within the directory described by an
+-- attachment descriptor. Return attachment descriptor for the new object if created
+-- successfully. The new object filepath must be relative and have no slashes.
+
+hacreate :: DevTable -> M.Map FilePath FilePath -> DevAttach -> FilePath -> Word32 -> IO DevAttach
+
+hacreate _ _ _ fp _ | isAbsolute fp || isDevice fp = throwIO Ebadarg
+
+hacreate tbl tmap da fp newperm = do
+  dpth <- objpath tmap da (devpath da)
+  dst <- getFileStatus dpth
+  unless (isDirectory dst) $ throwIO Enotdir
+  let spp = splitPath fp
+      dirperm = stat2Mode dst
+      actperm = calcPerm newperm dirperm
+      uperm = mode2Mode actperm
+      badmask = c_DMEXCL .|. c_DMAPPEND .|. c_DMDEVICE .|. c_DMAUTH -- not supported by this driver
+  when ((actperm .&. badmask) /= 0) $ throwIO Ebadarg
+  newpath <- canonicalizePath $ normalise (dpth ++ "/" ++ fp)
+  unless (length spp == 1) $ throwIO Ebadarg
+  nex <- fileExist newpath
+  when nex $ throwIO Eexist
+  case actperm .&. c_DMDIR of
+    0 -> createFile newpath uperm >>= closeFd
+    _ -> D.createDirectory newpath uperm
+  nst <- getFileStatus newpath
+  return DevAttach { devtbl = tbl
+                    ,devqid = stat2Qid nst
+                    ,devpath = normalise (devpath da ++ "/" ++ fp)
+                    ,devtree = devtree da}
 
 -- Given an attachment descriptor, produce the host file path to the object described.
 

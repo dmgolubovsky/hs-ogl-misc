@@ -16,6 +16,7 @@ module Data.NineP.Posix (
   stat2Qid
  ,stat2Mode
  ,stat2Stat
+ ,mode2Mode
  ,omode2IOMode
 ) where
 
@@ -57,6 +58,24 @@ omode2IOMode m = f (m .&. (complement (c_OCEXEC .|. c_ORCLOSE)))
             | m == c_ORDWR = ReadWriteMode
             | otherwise = ReadMode
 
+-- Common map for Posix and 9P2000 mode flags.
+
+oshift = 6
+gshift = 3
+wshift = 0
+
+permmap :: [(FileMode, Word32)]
+
+permmap = [(ownerReadMode, c_DMREAD `shiftL` oshift)
+          ,(ownerWriteMode, c_DMWRITE `shiftL` oshift)
+          ,(ownerExecuteMode, c_DMEXEC `shiftL` oshift)
+          ,(groupReadMode, c_DMREAD `shiftL` gshift)
+          ,(groupWriteMode, c_DMWRITE `shiftL` gshift)
+          ,(groupExecuteMode, c_DMEXEC `shiftL` gshift)
+          ,(otherReadMode, c_DMREAD `shiftL` wshift)
+          ,(otherWriteMode, c_DMWRITE `shiftL` wshift)
+          ,(otherExecuteMode, c_DMEXEC `shiftL` wshift)
+          ,(directoryMode, c_DMDIR)]
 
 -- | Build a filemode mask in terms of the 9P definition.
 
@@ -64,26 +83,22 @@ stat2Mode :: FileStatus -> Word32
 
 stat2Mode st =
   let umode = fileMode st
-      oshift = 6
-      gshift = 3
-      wshift = 0
-      permmap = [(ownerReadMode, c_DMREAD `shiftL` oshift)
-                ,(ownerWriteMode, c_DMWRITE `shiftL` oshift)
-                ,(ownerExecuteMode, c_DMEXEC `shiftL` oshift)
-                ,(groupReadMode, c_DMREAD `shiftL` gshift)
-                ,(groupWriteMode, c_DMWRITE `shiftL` gshift)
-                ,(groupExecuteMode, c_DMEXEC `shiftL` gshift)
-                ,(otherReadMode, c_DMREAD `shiftL` wshift)
-                ,(otherWriteMode, c_DMWRITE `shiftL` wshift)
-                ,(otherExecuteMode, c_DMEXEC `shiftL` wshift)
-                ,(directoryMode, c_DMDIR)]
       nmode = foldl mbit 0 permmap
       mbit acc (umb, nmb) = case umb .&. umode of
         0 -> acc
         _ -> acc .|. nmb
   in  nmode
 
--- Convert a Unix stat record to 9P2000 stat record.
+-- | Convert 9P2000 mode mask to Posix 'fileMode' mask.
+
+mode2Mode :: Word32 -> FileMode
+
+mode2Mode nmode = foldl mbit 0 permmap where
+  mbit acc (umb, nmb) = case nmb .&. nmode of
+    0 -> acc
+    _ -> acc .|. umb
+
+-- | Convert a Unix stat record to 9P2000 stat record.
 
 stat2Stat :: FileStatus -> FilePath -> IO Stat
 
@@ -108,6 +123,7 @@ stat2Stat st fname = do
        ,st_muid = funame
       }
   return ret
+
 
 
 
