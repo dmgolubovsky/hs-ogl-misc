@@ -21,9 +21,12 @@ module System.IO9.DevLayer (
  ,devWalk
  ,devOpen
  ,devStat
+ ,devRemove
+ ,devCreate
  ,isDevice
 ) where
 
+import Data.List
 import Data.Word
 import Data.Bits
 import Data.NineP
@@ -67,7 +70,7 @@ data DevAttach = DevAttach {
 -- Show the full device path of the object in the attachment.
 
 instance Show DevAttach where
-  show da = '#' : devchar (devtbl da) : (devtree da </> devpath da)
+  show da = '#' : devchar (devtbl da) : tail (normalise ("x" ++ devtree da </> devpath da))
 
 -- | Attach the given device and the root of its tree (use / by default).
 
@@ -107,6 +110,18 @@ devOpen da = open_ (devtbl da) da
 devStat :: DevAttach -> IO Stat
 
 devStat da = stat_ (devtbl da) da
+
+-- | Create a new object on the device.
+
+devCreate :: DevAttach -> FilePath -> Word32 -> IO DevAttach
+
+devCreate da = create_ (devtbl da) da
+
+-- | Remove an object from the device.
+
+devRemove :: DevAttach -> IO ()
+
+devRemove da = remove_ (devtbl da) da
 
 -- | Default device table with all device functions throwing an error.
 

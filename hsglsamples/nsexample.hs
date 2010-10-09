@@ -35,10 +35,16 @@ main = do
   initNS [dev] $ do
     dbgPrint "NameSpace"
     bindPath BindRepl "#Z" "/"
-    bindPath (BindBefore True) "/m2" "/m1"
+    bindPath (BindBefore False) "/m2" "/m1"
+    bindPath (BindBefore True) "/m3" "/m1"
     dbgPrint "Begin"
     ph <- evalPath dir
     dbgPrint $ show ph
+    nph <- newFile ph "test" 0o700
+    dbgPrint $ show nph
+    zph <- evalPath (phCanon nph)
+    dbgPrint $ show zph
+    delFile nph
     return ()
 
 

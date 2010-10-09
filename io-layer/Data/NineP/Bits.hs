@@ -61,8 +61,8 @@ calcPerm :: Word32                     -- ^ new object permissions
          -> Word32                     -- ^ calculated permissions
 
 calcPerm newperm dirperm = case newperm .&. c_DMDIR of
-  0 -> newperm .&. (complement 0666 .|. (dirperm .&. 0666))
-  _ -> newperm .&. (complement 0777 .|. (dirperm .&. 0777))
+  0 -> newperm .&. ((complement 0o666) .|. (dirperm .&. 0o666))
+  _ -> newperm .&. ((complement 0o777) .|. (dirperm .&. 0o777))
 
 -- | A special FID value (~ 0) to use in the attach message without authentication, and
 -- (as extension to the existing 9P2000 specification) in the clunk message to clunk all

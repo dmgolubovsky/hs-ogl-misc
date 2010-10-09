@@ -24,11 +24,18 @@ module System.IO9.NameSpaceT (
  ,PathHandle (phCanon)
  ,FileHandle (fhCanon)
  ,evalPath
+ ,newFile
+ ,delFile
 ) where
 
 import GHC.IO (catchException)
 import GHC.IO.Handle
+import Data.Bits
 import Data.Char
+import Data.Word
+import Data.List
+import Data.NineP
+import Data.NineP.Bits
 import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Trans
@@ -133,38 +140,6 @@ instance (MonadIO m) => Monad (NameSpaceT m) where
     m >>= k = NameSpaceT $ runNameSpaceT . k =<< runNameSpaceT m
     fail msg = NameSpaceT $ fail msg
 
--- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
--- evaluated. One exception however applies when binding to the "/" old path to the empty 
--- namespace, evaluation does not occur provided that the new path is a device path.
--- If any of paths is neither absolute nor device, failure occurs.
-
-bindPath :: MonadIO m
-         => BindFlag                   -- ^ Bind options (before, after, create etc.)
-         -> FilePath                   -- ^ New path
-         -> FilePath                   -- ^ Old path
-         -> NameSpaceT m ()            -- ^ No return value, namespace updated under the hood
-
-bindPath _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
-  NameSpaceT $ liftIO $ throwIO Efilename
-
-
-bindPath fl new old | old == "/" && isDevice new = NameSpaceT $ do
-  mv <- asks nspace
-  dtb <- asks kdtbl
-  liftIO $ withNameSpace mv $ \ns -> case M.null ns of
-    True -> do
-      let newnorm = normalise new
-      attnew <- attdev newnorm `runReaderT` (dtb, ns)
-      let phnew = PathHandle {phAttach = attnew, phCanon = newnorm}
-          ud = unionDir phnew
-      return $ M.insert old (UnionPoint ud new) ns
-    False -> bind_common fl new old dtb ns
-
-bindPath fl new old = NameSpaceT $ do
-  mv <- asks nspace
-  dtb <- asks kdtbl
-  liftIO $ withNameSpace mv $ bind_common fl new old dtb
-
 bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> NameSpace -> IO NameSpace
 
 bind_common fl new old dtb ns = do
@@ -202,6 +177,38 @@ data FileHandle = FileHandle {
  ,fhCanon :: FilePath                   -- ^ Canonicalized path to the file
 }
 
+-- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
+-- evaluated. One exception however applies when binding to the "/" old path to the empty 
+-- namespace, evaluation does not occur provided that the new path is a device path.
+-- If any of paths is neither absolute nor device, failure occurs.
+
+bindPath :: MonadIO m
+         => BindFlag                   -- ^ Bind options (before, after, create etc.)
+         -> FilePath                   -- ^ New path
+         -> FilePath                   -- ^ Old path
+         -> NameSpaceT m ()            -- ^ No return value, namespace updated under the hood
+
+bindPath _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
+  NameSpaceT $ liftIO $ throwIO Efilename
+
+
+bindPath fl new old | old == "/" && isDevice new = NameSpaceT $ do
+  mv <- asks nspace
+  dtb <- asks kdtbl
+  liftIO $ withNameSpace mv $ \ns -> case M.null ns of
+    True -> do
+      let newnorm = normalise new
+      attnew <- attdev newnorm `runReaderT` (dtb, ns)
+      let phnew = PathHandle {phAttach = attnew, phCanon = newnorm}
+          ud = unionDir phnew
+      return $ M.insert old (UnionPoint ud new) ns
+    False -> bind_common fl new old dtb ns
+
+bindPath fl new old = NameSpaceT $ do
+  mv <- asks nspace
+  dtb <- asks kdtbl
+  liftIO $ withNameSpace mv $ bind_common fl new old dtb
+
 -- | Evaluate a file path (absolute or device) using the current namespace. The function will try
 -- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
 -- of the path off. If successful, an attachment descriptor for the path is returned. Otherwise
@@ -216,6 +223,41 @@ evalPath fp = NameSpaceT $ do
   ns <- asks nspace >>= liftIO . readMVar
   kd <- asks kdtbl
   liftIO $ eval_common fp `runReaderT` (kd, ns)
+
+-- | Create a new file or directory (set 'c_DMDIR' in the @mode@ argument).
+-- Creation in an union directory follows the Plan9 semantics by finding the
+-- first member of the union that allows creation.
+
+newFile :: MonadIO m
+        => PathHandle                     -- ^ Handle of the directory
+        -> FilePath                       -- ^ Name of the file or directory to create
+        -> Word32                         -- ^ Creation mode/permissions
+        -> NameSpaceT m PathHandle        -- ^ Handle of the created object
+
+newFile dph fp mode = NameSpaceT $ do
+  when (((qid_typ $ devqid $ phAttach dph) .&. c_QTDIR) == 0) $ liftIO $ throwIO Enotdir
+  ns <- asks nspace >>= liftIO . readMVar
+  let un = findunion (phCanon dph) ns
+      dirs = filter dircr un
+      dda = case dirs of
+        [] -> phAttach dph
+        (d:_) -> phAttach $ dirph d
+  when (null dirs && not (null un)) $ liftIO $ throwIO Enocreate
+  da <- liftIO $ devCreate dda fp mode
+  let newpath = tail $ normalise ("x" ++ phCanon dph ++ "/" ++ fp)
+  return PathHandle {
+                phCanon = newpath
+               ,phAttach = da}
+  
+
+-- | Remove a file or a directory whose 'PathHandle' is provided. Fails if a non-empty
+-- directory is to be removed.
+
+delFile :: MonadIO m
+        => PathHandle                     -- ^ Handle of the object to be removed
+        -> NameSpaceT m ()                -- ^ Nothing is returned
+
+delFile ph = NameSpaceT $ liftIO $ devRemove $ phAttach ph
 
 -- Common function for path evaluation use by both bindPath and evalPath.
 -- It operates on the immutable copy of the namespace, thus it uses a separate
@@ -301,13 +343,15 @@ eval_step da (".." : rawps) orig eval = do
 eval_step da (rawp : rawps) orig eval = do
   let jeval = joinPath eval
       jorig = joinPath orig
-      nrawp = normalise (rawp ++ "/")
-  undirs <- asks snd >>= findunion jorig >>= 
+      nrawp = normalise (rawp ++ if null rawps then "" else "/")
+  undirs <- asks snd >>= return . findunion jorig >>=  return . map dirph >>=
     \ps -> return (if null ps then [da] else map phAttach ps)
   foldr mplus (throw Enonexist) $ flip map undirs $ \dda -> do
     wda <- liftIO $ (devWalk dda nrawp `catchException` (\(e :: NineError) -> fail ""))
     eval_step wda rawps (orig ++ [rawp]) (eval ++ [rawp])
 
+
+ 
 
 -- Find the root entry in the namespace. The root entry is special that it always has
 -- one directory bound. So, only a single entry is returned (in the case of multiple
@@ -317,7 +361,7 @@ eval_step da (rawp : rawps) orig eval = do
 findroot :: NameSpace -> EvalM FilePath
 
 findroot ns = do
-  fps <- findunion "/" ns
+  let fps = map dirph $ findunion "/" ns
   case fps of
     (PathHandle {phCanon = fp}:_) | isDevice fp -> return fp
     _ -> liftIO $ throwIO $ OtherError "eval: no root binding in the namespace"
@@ -327,14 +371,14 @@ findroot ns = do
 -- No normalization or canonicalization of the union point path is done here,
 -- as well as of the union point contents.
 
-findunion :: FilePath -> NameSpace -> EvalM [PathHandle]
+findunion :: FilePath -> NameSpace -> [BoundDir]
 
-findunion fp ns = do
+findunion fp ns = 
   let fp' = if fp == "/" then fp else normalise (fp ++ "/")
       up = M.lookup fp' ns
-  case up of
-    Just (UnionPoint ud _) -> return . map dirph . DL.toList $ unDir ud 
-    _ -> return []
+  in  case up of
+        Just (UnionPoint ud _) -> DL.toList $ unDir ud 
+        _ -> []
 
 
 
@@ -402,4 +446,5 @@ treeOf _ = ""
 dbgPrint :: MonadIO m => String -> NameSpaceT m ()
 
 dbgPrint s = NameSpaceT $ liftIO $ putStrLn s
+
 

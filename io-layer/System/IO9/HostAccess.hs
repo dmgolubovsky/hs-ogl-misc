@@ -17,6 +17,7 @@ module System.IO9.HostAccess (
   devHost
 ) where
 
+import Numeric
 import Prelude hiding (catch)
 import Data.Bits
 import Data.Word
@@ -60,6 +61,7 @@ devHost trees = do
        ,open_ = haopen devtbl trmap
        ,stat_ = hastat devtbl trmap
        ,create_ = hacreate devtbl trmap
+       ,remove_ = haremove devtbl trmap
        ,walk_ = hawalk devtbl trmap} 
   return devtbl
 
@@ -162,6 +164,16 @@ hacreate tbl tmap da fp newperm = do
                     ,devqid = stat2Qid nst
                     ,devpath = normalise (devpath da ++ "/" ++ fp)
                     ,devtree = devtree da}
+
+-- Remove an object whose attachment descriptor is supplied. If the object is a non-
+-- empty directory, operation fails as usual.
+
+haremove :: DevTable -> M.Map FilePath FilePath -> DevAttach -> IO () 
+
+haremove tbl tmap da = do
+  dpth <- objpath tmap da (devpath da)
+  isdir <- getFileStatus dpth >>= return . isDirectory
+  removeLink dpth `catch` (\(e :: IOError) -> throwIO Eperm)
 
 -- Given an attachment descriptor, produce the host file path to the object described.
 
