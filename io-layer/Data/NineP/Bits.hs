@@ -15,6 +15,7 @@
 
 module Data.NineP.Bits (
   calcPerm
+ ,keepAllStat
  ,c_DMAPPEND
  ,c_DMAUTH
  ,c_DMDEVICE
@@ -50,6 +51,7 @@ module Data.NineP.Bits (
 
 import Data.Word
 import Data.Bits
+import Data.NineP
 
 -- | Calculate permissions of a file or directory being created, as described
 -- in man (5) open <http://man.cat-v.org/plan_9/5/open>. The c_DMDIR bit
@@ -63,6 +65,24 @@ calcPerm :: Word32                     -- ^ new object permissions
 calcPerm newperm dirperm = case newperm .&. c_DMDIR of
   0 -> newperm .&. ((complement 0o666) .|. (dirperm .&. 0o666))
   _ -> newperm .&. ((complement 0o777) .|. (dirperm .&. 0o777))
+
+-- | A 'Stat' structure populated with values that, being passed to wstat
+-- would not change the file or directory properties.
+
+keepAllStat :: Stat
+
+keepAllStat = Stat {
+  st_typ = maxBound
+ ,st_dev = maxBound
+ ,st_qid = Qid maxBound maxBound maxBound
+ ,st_mode = maxBound
+ ,st_atime = maxBound
+ ,st_mtime = maxBound
+ ,st_length = maxBound
+ ,st_name = ""
+ ,st_uid = ""
+ ,st_gid = ""
+ ,st_muid = ""}
 
 -- | A special FID value (~ 0) to use in the attach message without authentication, and
 -- (as extension to the existing 9P2000 specification) in the clunk message to clunk all

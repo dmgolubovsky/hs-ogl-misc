@@ -60,6 +60,7 @@ devHost trees = do
         attach_ = haattach devtbl trmap
        ,open_ = haopen devtbl trmap
        ,stat_ = hastat devtbl trmap
+       ,wstat_ = hawstat devtbl trmap
        ,create_ = hacreate devtbl trmap
        ,remove_ = haremove devtbl trmap
        ,walk_ = hawalk devtbl trmap} 
@@ -133,6 +134,39 @@ hastat tbl tmap da = do
               "" -> "/"
               _ -> devpath da
   stat2Stat st (head $ reverse $ splitPath np)
+
+-- Given the attachment descriptor, and the new Stat structure, change
+-- attributes of the object identified by the descriptor. Per 
+-- <http://man.cat-v.org/plan_9/5/stat>, only the following can change:
+--   * name
+--   * mode (except for the DMDIR bit; DMAPPEND and DMEXCL are not
+--     supported by this driver, so basically only lower 9 bits
+--     can change)
+--   * mtime
+--   * length
+--   * GID
+-- New attachment descriptor will be returned.
+
+hawstat :: DevTable -> M.Map FilePath FilePath -> DevAttach -> Stat -> IO DevAttach
+
+hawstat tbl tmap da nst = do
+  npth <- objpath tmap da (devpath da)
+  st <- getFileStatus npth
+  (newpath, newdp) <- case (null $ st_name nst) of
+    True -> return (npth, devpath da)
+    False -> do
+      let newpth = replaceFileName npth (st_name nst)
+          newdpth = replaceFileName (devpath da) (st_name nst)
+      (rename npth newpth) `catch` (\(e :: IOError) -> throwIO Eperm)
+      return (newpth, newdpth)
+  nst <- getFileStatus newpath
+  return DevAttach { devtbl = tbl
+                    ,devqid = stat2Qid nst
+                    ,devpath = newdp
+                    ,devtree = devtree da}
+  
+  
+
 
 -- Create a new object (file or directory) within the directory described by an
 -- attachment descriptor. Return attachment descriptor for the new object if created

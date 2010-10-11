@@ -18,14 +18,15 @@
 module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
- ,initNS
+ ,nsInit
  ,dbgPrint
- ,bindPath
  ,PathHandle (phCanon)
  ,FileHandle (fhCanon)
- ,evalPath
- ,newFile
- ,delFile
+ ,nsBind
+ ,nsEval
+ ,nsCreate
+ ,nsRemove
+ ,nsWstat
 ) where
 
 import GHC.IO (catchException)
@@ -112,9 +113,9 @@ type DevMap = M.Map Char DevTable
 -- | Run the "init" program with the given device list and empty namespace
 -- (it is expected that it builds the namespace from scratch).
 
-initNS :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
+nsInit :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
 
-initNS dts nsi = do
+nsInit dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
   let dvm = M.fromList $ zip (map devchar dts) dts
       env = NsEnv {
@@ -182,17 +183,17 @@ data FileHandle = FileHandle {
 -- namespace, evaluation does not occur provided that the new path is a device path.
 -- If any of paths is neither absolute nor device, failure occurs.
 
-bindPath :: MonadIO m
-         => BindFlag                   -- ^ Bind options (before, after, create etc.)
-         -> FilePath                   -- ^ New path
-         -> FilePath                   -- ^ Old path
-         -> NameSpaceT m ()            -- ^ No return value, namespace updated under the hood
+nsBind :: MonadIO m
+       => BindFlag                     -- ^ Bind options (before, after, create etc.)
+       -> FilePath                     -- ^ New path
+       -> FilePath                     -- ^ Old path
+       -> NameSpaceT m ()              -- ^ No return value, namespace updated under the hood
 
-bindPath _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
+nsBind _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
   NameSpaceT $ liftIO $ throwIO Efilename
 
 
-bindPath fl new old | old == "/" && isDevice new = NameSpaceT $ do
+nsBind fl new old | old == "/" && isDevice new = NameSpaceT $ do
   mv <- asks nspace
   dtb <- asks kdtbl
   liftIO $ withNameSpace mv $ \ns -> case M.null ns of
@@ -204,7 +205,7 @@ bindPath fl new old | old == "/" && isDevice new = NameSpaceT $ do
       return $ M.insert old (UnionPoint ud new) ns
     False -> bind_common fl new old dtb ns
 
-bindPath fl new old = NameSpaceT $ do
+nsBind fl new old = NameSpaceT $ do
   mv <- asks nspace
   dtb <- asks kdtbl
   liftIO $ withNameSpace mv $ bind_common fl new old dtb
@@ -214,12 +215,12 @@ bindPath fl new old = NameSpaceT $ do
 -- of the path off. If successful, an attachment descriptor for the path is returned. Otherwise
 -- the function fails (e. g. if a device driver returns an error message).
 
-evalPath :: (MonadIO m) => FilePath -> NameSpaceT m PathHandle
+nsEval :: (MonadIO m) => FilePath -> NameSpaceT m PathHandle
 
-evalPath fp | not (isAbsolute fp || isDevice fp) =
+nsEval fp | not (isAbsolute fp || isDevice fp) =
   NameSpaceT $ liftIO $ throw Efilename
 
-evalPath fp = NameSpaceT $ do
+nsEval fp = NameSpaceT $ do
   ns <- asks nspace >>= liftIO . readMVar
   kd <- asks kdtbl
   liftIO $ eval_common fp `runReaderT` (kd, ns)
@@ -228,13 +229,13 @@ evalPath fp = NameSpaceT $ do
 -- Creation in an union directory follows the Plan9 semantics by finding the
 -- first member of the union that allows creation.
 
-newFile :: MonadIO m
-        => PathHandle                     -- ^ Handle of the directory
-        -> FilePath                       -- ^ Name of the file or directory to create
-        -> Word32                         -- ^ Creation mode/permissions
-        -> NameSpaceT m PathHandle        -- ^ Handle of the created object
+nsCreate :: MonadIO m
+         => PathHandle                    -- ^ Handle of the directory
+         -> FilePath                      -- ^ Name of the file or directory to create
+         -> Word32                        -- ^ Creation mode/permissions
+         -> NameSpaceT m PathHandle       -- ^ Handle of the created object
 
-newFile dph fp mode = NameSpaceT $ do
+nsCreate dph fp mode = NameSpaceT $ do
   when (((qid_typ $ devqid $ phAttach dph) .&. c_QTDIR) == 0) $ liftIO $ throwIO Enotdir
   ns <- asks nspace >>= liftIO . readMVar
   let un = findunion (phCanon dph) ns
@@ -253,13 +254,29 @@ newFile dph fp mode = NameSpaceT $ do
 -- | Remove a file or a directory whose 'PathHandle' is provided. Fails if a non-empty
 -- directory is to be removed.
 
-delFile :: MonadIO m
-        => PathHandle                     -- ^ Handle of the object to be removed
-        -> NameSpaceT m ()                -- ^ Nothing is returned
+nsRemove :: MonadIO m
+         => PathHandle                    -- ^ Handle of the object to be removed
+         -> NameSpaceT m ()               -- ^ Nothing is returned
 
-delFile ph = NameSpaceT $ liftIO $ devRemove $ phAttach ph
+nsRemove ph = NameSpaceT $ liftIO $ devRemove $ phAttach ph
 
--- Common function for path evaluation use by both bindPath and evalPath.
+-- | Change some attributes of a file or directory.
+
+nsWstat :: (MonadIO m)
+        => PathHandle                     -- ^ Handle of the object whose attributes to change
+        -> Stat                           -- ^ A 'Stat' structure whose fields specify changes
+        -> NameSpaceT m PathHandle        -- ^ Handle of the same object with updated attrs.
+
+nsWstat ph st = NameSpaceT $ liftIO $ do
+  nda <- devWstat (phAttach ph) st
+  nst <- devStat nda
+  let ncn = replaceFileName (phCanon ph) (st_name nst)
+  return PathHandle {
+                phCanon = ncn
+               ,phAttach = nda}
+  
+
+-- Common function for path evaluation use by both nsBind and nsEval.
 -- It operates on the immutable copy of the namespace, thus it uses a separate
 -- reader transformer.
 

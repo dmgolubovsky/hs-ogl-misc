@@ -21,6 +21,7 @@ module System.IO9.DevLayer (
  ,devWalk
  ,devOpen
  ,devStat
+ ,devWstat
  ,devRemove
  ,devCreate
  ,isDevice
@@ -54,7 +55,7 @@ data DevTable = DevTable {
   ,remove_ :: DevAttach -> IO ()                     -- ^ Remove the object referred to by the
                                                      --   'DevAttach' provided
   ,stat_ :: DevAttach -> IO Stat                     -- ^ Obtain object attributes
-  ,wstat_ :: DevAttach -> FileStatus -> IO DevAttach -- ^ Change some object attributes
+  ,wstat_ :: DevAttach -> Stat -> IO DevAttach       -- ^ Change some object attributes
 }
 
 -- | Device attachment. This data structure represents a file or a directory
@@ -110,6 +111,13 @@ devOpen da = open_ (devtbl da) da
 devStat :: DevAttach -> IO Stat
 
 devStat da = stat_ (devtbl da) da
+
+-- | Change some attributes of a file or a directory described by the attachment
+-- descriptor provided.
+
+devWstat :: DevAttach -> Stat -> IO DevAttach
+
+devWstat da = wstat_ (devtbl da) da
 
 -- | Create a new object on the device.
 

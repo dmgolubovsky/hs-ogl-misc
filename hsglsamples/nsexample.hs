@@ -32,19 +32,22 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
-  initNS [dev] $ do
+  nsInit [dev] $ do
     dbgPrint "NameSpace"
-    bindPath BindRepl "#Z" "/"
-    bindPath (BindBefore False) "/m2" "/m1"
-    bindPath (BindBefore True) "/m3" "/m1"
+    nsBind BindRepl "#Z" "/"
+    nsBind (BindBefore False) "/m2" "/m1"
+    nsBind (BindBefore True) "/m3" "/m1"
     dbgPrint "Begin"
-    ph <- evalPath dir
+    ph <- nsEval dir
     dbgPrint $ show ph
-    nph <- newFile ph "test" 0o700
+    nph <- nsCreate ph "test" 0o700
     dbgPrint $ show nph
-    zph <- evalPath (phCanon nph)
+    zph <- nsEval (phCanon nph)
     dbgPrint $ show zph
-    delFile nph
+    let ren = keepAllStat {st_name = "test2x"}
+    rph <- nsWstat zph ren
+    dbgPrint $ show rph
+    nsRemove rph
     return ()
 
 
@@ -77,8 +80,8 @@ printDir s = do
 {-
   startns $ do
     lift $ device 'Z' $ devPosix True rootdir
-    bindPath BindRepl "#Z" "/"
-    bindPath (BindBefore True) "/m2" "/m1"
+    nsBind BindRepl "#Z" "/"
+    nsBind (BindBefore True) "/m2" "/m1"
     r <- readUnion dir
     liftIO $ mapM_ (putStrLn . fmt) r
 
@@ -96,7 +99,7 @@ fmode mod = fdir mod ++ "" where
   fdir _ = "-"
 -}
 {-
-    e <- evalPath dir
+    e <- nsEval dir
     liftIO . putStrLn . show $ e
     s <- lift $ statfid (epDev e, epFID e)
     liftIO . putStrLn . show $ s
