@@ -21,11 +21,12 @@ module System.IO9.NameSpaceT (
  ,nsInit
  ,dbgPrint
  ,PathHandle (phCanon)
- ,FileHandle (fhCanon)
+ ,FileHandle
  ,nsBind
  ,nsEval
  ,nsCreate
  ,nsRemove
+ ,nsStat
  ,nsWstat
 ) where
 
@@ -157,7 +158,11 @@ bind_common fl new old dtb ns = do
       ns' = M.insertWith modx norm up ns
   return ns'
 
--- | A semi-opaque data type to represent an evaluated path.
+-- | A semi-opaque data type to represent an evaluated path. Note that path handles
+-- identify filesystem objects by their name (paths), so if a file or directory
+-- gets renamed behind the scenes, 'PathHandle's associated with them may become
+-- invalid (unless the attachment descriptor is passed to the file server,
+-- and the server has some way to track its objects by the embedded 'Qid').
 
 data PathHandle = PathHandle {
   phAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
@@ -170,13 +175,14 @@ instance Eq PathHandle where
 instance Ord PathHandle where
   compare p1 p2 = compare (phCanon p1) (phCanon p2)
 
--- | A semi-opaque data structure to represent an open file.
+-- | An opaque data structure to represent an open file or a directory. For a file,
+-- this is just a wrapper for a regular GHC handle; for a directory, this is a list
+-- of directory handles belonging to an union, if any (or a singleton handle list
+-- for non-union directories).
 
-data FileHandle = FileHandle {
-  fhHandle :: Handle                    -- ^ A handle to an open file as provided by GHC I/O
- ,fhAttach :: DevAttach                 -- ^ Attachment descriptor for the file
- ,fhCanon :: FilePath                   -- ^ Canonicalized path to the file
-}
+data FileHandle = 
+   FileHandle Handle                   -- ^ Wraps a regular file handle
+ | DirHandle [(DevAttach, Handle)]     -- ^ Wraps several directory handles
 
 -- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
 -- evaluated. One exception however applies when binding to the "/" old path to the empty 
@@ -227,13 +233,16 @@ nsEval fp = NameSpaceT $ do
 
 -- | Create a new file or directory (set 'c_DMDIR' in the @mode@ argument).
 -- Creation in an union directory follows the Plan9 semantics by finding the
--- first member of the union that allows creation.
+-- first member of the union that allows creation. The 'FilePath' supplied should not
+-- contain slashes, otherwise an error will be thrown.
 
 nsCreate :: MonadIO m
          => PathHandle                    -- ^ Handle of the directory
          -> FilePath                      -- ^ Name of the file or directory to create
          -> Word32                        -- ^ Creation mode/permissions
          -> NameSpaceT m PathHandle       -- ^ Handle of the created object
+
+nsCreate dph fp mode | '/' `elem` fp = NameSpaceT $ liftIO $ throwIO Ebadarg
 
 nsCreate dph fp mode = NameSpaceT $ do
   when (((qid_typ $ devqid $ phAttach dph) .&. c_QTDIR) == 0) $ liftIO $ throwIO Enotdir
@@ -260,12 +269,26 @@ nsRemove :: MonadIO m
 
 nsRemove ph = NameSpaceT $ liftIO $ devRemove $ phAttach ph
 
--- | Change some attributes of a file or directory.
+-- | Obtain attributes of a file or directory. Note that for directories,
+-- attributes of their server objects will be returned rather than of anything
+-- unioned with them.
+
+nsStat :: MonadIO m
+       => PathHandle                      -- ^ Handle of the object whose attributes are requested
+       -> NameSpaceT m Stat               -- ^ Result
+
+nsStat ph = NameSpaceT $ liftIO $ devStat (phAttach ph)
+
+-- | Change some attributes of a file or directory. See <http://man.cat-v.org/plan_9/5/stat>.
+-- If the 'st_name' member of the provided 'Stat' structure contains a slash, error
+-- will be thrown.
 
 nsWstat :: (MonadIO m)
         => PathHandle                     -- ^ Handle of the object whose attributes to change
         -> Stat                           -- ^ A 'Stat' structure whose fields specify changes
         -> NameSpaceT m PathHandle        -- ^ Handle of the same object with updated attrs.
+
+nsWstat ph st | '/' `elem` st_name st = NameSpaceT $ liftIO $ throwIO Ebadarg
 
 nsWstat ph st = NameSpaceT $ liftIO $ do
   nda <- devWstat (phAttach ph) st

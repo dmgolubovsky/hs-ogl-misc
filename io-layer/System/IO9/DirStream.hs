@@ -141,7 +141,8 @@ instance CSPIO DirDev where
   initsp (DirDev ds sp) = rewindDirStreamB ds >> return (ContReady (readdir ds))
   bufsize = const 4096
 
-dirClose (DirDev ds sp) = do
+dirClose (DirDev (DirStreamB (dirp, _)) sp) = do
+  c_closedir dirp
   modifyIORef sp (const $ ContErr $ mkIOError eofErrorType 
                                               "Handle was closed" Nothing Nothing)
   return ()

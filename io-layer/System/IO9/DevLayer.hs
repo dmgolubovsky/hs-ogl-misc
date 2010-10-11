@@ -136,13 +136,14 @@ devRemove da = remove_ (devtbl da) da
 defDevTable :: Char -> DevTable
 
 defDevTable c = DevTable { devchar = c
-                          ,attach_ = \_ -> throwIO Eshutdown
-                          ,walk_ = \_ _ -> throwIO Eshutdown
-                          ,open_ = \_ _ -> throwIO Eshutdown
-                          ,create_ = \_ _ _ -> throwIO Eshutdown
-                          ,remove_ = \_ -> throwIO Eshutdown
-                          ,stat_ = \_ -> throwIO Eshutdown
-                          ,wstat_ = \_ _ -> throwIO Eshutdown}
+                          ,attach_ = \_ -> throwIO notimpl
+                          ,walk_ = \_ _ -> throwIO notimpl
+                          ,open_ = \_ _ -> throwIO notimpl
+                          ,create_ = \_ _ _ -> throwIO notimpl
+                          ,remove_ = \_ -> throwIO notimpl
+                          ,stat_ = \_ -> throwIO notimpl
+                          ,wstat_ = \_ _ -> throwIO notimpl} where
+  notimpl = OtherError "Device function not implemented"
 
 -- | Return 'True' is the given path is a device path (starts with #).
 
