@@ -50,7 +50,8 @@ main = do
     rph <- nsWstat zph ren
     dbgPrint $ show rph
     nsRemove rph
-    eph <- nsCreate ph "hello" 0o600
+    eph <- (nsCreate ph "hello" 0o600) `catchSome` (\_ -> dbgPrint "Reusing" >> 
+                                                          nsEval (dir </> "hello"))
     eit <- nsIterText eph 0
     run (enumList 2 [T.pack "Hello Привет\n"] $$ eit) >>= dbgPrint . show
     return ()

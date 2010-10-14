@@ -28,6 +28,7 @@ module System.IO9.NameSpaceT (
  ,nsStat
  ,nsWstat
  ,nsIterText
+ ,catchSome
 ) where
 
 import GHC.IO (catchException)
@@ -49,6 +50,7 @@ import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Exception
+import qualified Control.Monad.CatchIO as C
 import qualified Data.Enumerator as E
 import qualified Data.Enumerator.Text as ET
 import qualified Data.Text as T
@@ -145,6 +147,16 @@ instance (MonadIO m) => Monad (NameSpaceT m) where
     return = NameSpaceT . return
     m >>= k = NameSpaceT $ runNameSpaceT . k =<< runNameSpaceT m
     fail msg = NameSpaceT $ fail msg
+
+catchSome :: (C.MonadCatchIO m) 
+          => NameSpaceT m a 
+          -> (SomeException -> NameSpaceT m a) 
+          -> NameSpaceT m a
+
+m `catchSome` h = NameSpaceT $ do
+  env <- ask
+  lift ((runNameSpaceT m `runReaderT` env) `C.catch` 
+        (\e -> runNameSpaceT (h e) `runReaderT` env))
 
 bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> NameSpace -> IO NameSpace
 
