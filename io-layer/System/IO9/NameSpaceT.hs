@@ -21,13 +21,13 @@ module System.IO9.NameSpaceT (
  ,nsInit
  ,dbgPrint
  ,PathHandle (phCanon)
- ,FileHandle
  ,nsBind
  ,nsEval
  ,nsCreate
  ,nsRemove
  ,nsStat
  ,nsWstat
+ ,nsIterText
 ) where
 
 import GHC.IO (catchException)
@@ -39,15 +39,19 @@ import Data.List
 import Data.NineP
 import Data.NineP.Bits
 import Control.Monad
-import Control.Monad.Error
-import Control.Monad.Trans
-import Control.Monad.Reader
+import Control.Monad.Trans.Error
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Control.Concurrent
 import Control.Concurrent.MVar
 import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Exception
+import qualified Data.Enumerator as E
+import qualified Data.Enumerator.Text as ET
+import qualified Data.Text as T
 import qualified Data.DList as DL
 import qualified Data.Map as M
 
@@ -175,14 +179,6 @@ instance Eq PathHandle where
 instance Ord PathHandle where
   compare p1 p2 = compare (phCanon p1) (phCanon p2)
 
--- | An opaque data structure to represent an open file or a directory. For a file,
--- this is just a wrapper for a regular GHC handle; for a directory, this is a list
--- of directory handles belonging to an union, if any (or a singleton handle list
--- for non-union directories).
-
-data FileHandle = 
-   FileHandle Handle                   -- ^ Wraps a regular file handle
- | DirHandle [(DevAttach, Handle)]     -- ^ Wraps several directory handles
 
 -- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
 -- evaluated. One exception however applies when binding to the "/" old path to the empty 
@@ -297,7 +293,31 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
   return PathHandle {
                 phCanon = ncn
                ,phAttach = nda}
+
+-- | Open a 'T.Text' 'E.Iteratee' for the given path handle.
   
+nsIterText :: (MonadIO m)
+           => PathHandle                  -- ^ Handle to iterate over
+           -> Word8                       -- ^ Open mode (only c_OTRUNC is meaningful)
+           -> NameSpaceT m (E.Iteratee T.Text (NameSpaceT m) ())
+
+nsIterText ph om = do
+  h <- NameSpaceT $ liftIO $ do
+    hh <- devOpen (phAttach ph) (c_OWRITE .|. (om .&. c_OTRUNC))
+    hSetBuffering hh NoBuffering
+    return hh
+  return $ liftIter $ ET.iterHandle h
+
+-- Lift an iteratee to NameSpaceT.
+
+liftIter :: (MonadIO m) => E.Iteratee a m b -> E.Iteratee a (NameSpaceT m) b
+
+liftIter iter = E.Iteratee $ do
+	step <- NameSpaceT $ lift $ E.runIteratee iter
+	return $ case step of
+		E.Yield x cs -> E.Yield x cs
+		E.Error err -> E.Error err
+		E.Continue k -> E.Continue (liftIter . k)
 
 -- Common function for path evaluation use by both nsBind and nsEval.
 -- It operates on the immutable copy of the namespace, thus it uses a separate

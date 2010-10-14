@@ -20,6 +20,8 @@ import System.IO9.NameSpaceT
 
 import System.IO9.DirStream
 import qualified Data.ByteString as B
+import Data.Enumerator hiding (head)
+import qualified Data.Text as T
 
 rootdir = "/home/dima/ns-root"
 
@@ -40,7 +42,7 @@ main = do
     dbgPrint "Begin"
     ph <- nsEval dir
     dbgPrint $ show ph
-    nph <- nsCreate ph "test" 0o700
+    nph <- nsCreate ph "test" 0o600
     dbgPrint $ show nph
     zph <- nsEval (phCanon nph)
     dbgPrint $ show zph
@@ -48,21 +50,12 @@ main = do
     rph <- nsWstat zph ren
     dbgPrint $ show rph
     nsRemove rph
+    eph <- nsCreate ph "hello" 0o600
+    eit <- nsIterText eph 0
+    run (enumList 2 [T.pack "Hello Привет\n"] $$ eit) >>= dbgPrint . show
     return ()
 
 
-{-
-  att <- devAttach dev "/"
-  putStrLn $ show att
-  wlk <- devWalk att dir
-  putStrLn $ show wlk
-  putStrLn $ show (devqid wlk)
-  devStat wlk >>= putStrLn . show
-  h <- devOpen wlk c_OREAD
-  case qid_typ (devqid wlk) .&. c_QTDIR of
-    0 -> printFile h
-    _ -> printDir h
--}
 
 printFile h = do
   hGetContents h >>= putStrLn
@@ -76,48 +69,5 @@ printDir s = do
     hIsEOF s
   return ()
  
-
-{-
-  startns $ do
-    lift $ device 'Z' $ devPosix True rootdir
-    nsBind BindRepl "#Z" "/"
-    nsBind (BindBefore True) "/m2" "/m1"
-    r <- readUnion dir
-    liftIO $ mapM_ (putStrLn . fmt) r
-
-fmt :: Stat -> String
-
-fmt st = fmode (st_mode st) ++ " " ++
-         [chr (fromIntegral $ st_typ st)] ++ " " ++
-         show (st_dev st) ++ " " ++
-         st_name st
-
-fmode :: Word32 -> String
-
-fmode mod = fdir mod ++ "" where
-  fdir x | x .&. c_DMDIR /= 0 = "d"
-  fdir _ = "-"
--}
-{-
-    e <- nsEval dir
-    liftIO . putStrLn . show $ e
-    s <- lift $ statfid (epDev e, epFID e)
-    liftIO . putStrLn . show $ s
-    lift $ devmsg (epDev e) $ Topen (epFID e) c_OREAD
-    r <- lift $ readdir (epDev e, epFID e)
-    liftIO $ putStrLn $ show r
--}  
-  
-{-
-    device 'Z' $ devPosix True rootdir
-    d <- freshdev 'Z'
-    devmsg d $ Tversion 2048 "9P2000"
-    devmsg d $ Tattach 0 0 "" "/"
-    st <- devmsg d $ Tstat 0
-    liftIO . putStrLn $ show st
-    wk <- devmsg d $ Twalk 0 1 (filter (/= "/") $ splitPath dir) 
-    liftIO . putStrLn $ show wk
-    liftIO (hGetLine stdin) >>= liftIO . putStrLn
--}
 
 
