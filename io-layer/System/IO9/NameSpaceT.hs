@@ -28,7 +28,7 @@ module System.IO9.NameSpaceT (
  ,nsStat
  ,nsWstat
  ,nsIterText
- ,catchSome
+ ,nsCatch
 ) where
 
 import GHC.IO (catchException)
@@ -49,6 +49,7 @@ import Control.Concurrent.MVar
 import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
+import System.IO.Error
 import Control.Exception
 import qualified Control.Monad.CatchIO as C
 import qualified Data.Enumerator as E
@@ -148,15 +149,28 @@ instance (MonadIO m) => Monad (NameSpaceT m) where
     m >>= k = NameSpaceT $ runNameSpaceT . k =<< runNameSpaceT m
     fail msg = NameSpaceT $ fail msg
 
-catchSome :: (C.MonadCatchIO m) 
-          => NameSpaceT m a 
-          -> (SomeException -> NameSpaceT m a) 
-          -> NameSpaceT m a
+-- | Catch an error occurred during a namespaced operation, and
+-- convert into 'NineError' where possible, otherwise just report
+-- the error string to the application.
 
-m `catchSome` h = NameSpaceT $ do
+nsCatch :: (C.MonadCatchIO m) 
+        => NameSpaceT m a 
+        -> (NineError -> NameSpaceT m a) 
+        -> NameSpaceT m a
+
+m `nsCatch` h = NameSpaceT $ do
   env <- ask
-  lift ((runNameSpaceT m `runReaderT` env) `C.catch` 
-        (\e -> runNameSpaceT (h e) `runReaderT` env))
+  let runhnd = \ee -> runNameSpaceT (h ee) `runReaderT` env
+  lift ((runNameSpaceT m `runReaderT` env) `C.catches` 
+        [C.Handler (\(e :: NineError) -> runhnd e)
+        ,C.Handler (\(e :: ErrorCall) -> runhnd $ OtherError $ show e)
+        ,C.Handler (\(e :: IOError) -> case e of
+           _ | isAlreadyExistsError e -> runhnd Eexist
+           _ | isDoesNotExistError e -> runhnd Enonexist
+           _ | isIllegalOperation e -> runhnd Eio
+           _ | isPermissionError e -> runhnd Eperm
+           _ | isEOFError e -> runhnd Ehungup
+           _ -> runhnd $ OtherError $ show e)])
 
 bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> NameSpace -> IO NameSpace
 

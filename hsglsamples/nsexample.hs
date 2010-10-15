@@ -12,8 +12,6 @@ import Data.List.Split
 import System.FilePath
 import System.Directory
 import System.Environment
-import Control.Monad.Trans
-import Control.Monad.State
 import System.IO9.DevLayer
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
@@ -50,8 +48,9 @@ main = do
     rph <- nsWstat zph ren
     dbgPrint $ show rph
     nsRemove rph
-    eph <- (nsCreate ph "hello" 0o600) `catchSome` (\_ -> dbgPrint "Reusing" >> 
-                                                          nsEval (dir </> "hello"))
+    eph <- (nsCreate ph "hello" 0o600) `nsCatch` (\e -> dbgPrint (show e) >>
+                                                        dbgPrint "Reusing" >> 
+                                                        nsEval (dir </> "hello"))
     eit <- nsIterText eph 0
     run (enumList 2 [T.pack "Hello Привет\n"] $$ eit) >>= dbgPrint . show
     return ()
