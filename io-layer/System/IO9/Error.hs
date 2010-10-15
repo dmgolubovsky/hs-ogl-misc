@@ -75,7 +75,7 @@ data NineError = OtherError String
  | Ecmdargs	-- ^ wrong #args in control message
  | Ebadip	-- ^ bad ip address syntax
  | Edirseek	-- ^ seek in directory
-    deriving (Typeable)
+    deriving (Eq, Typeable)
 
 instance Show NineError where
   show (OtherError s) = s

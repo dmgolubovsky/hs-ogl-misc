@@ -44,7 +44,7 @@ data NineError = OtherError String
 EOF
 sed 's,.*\(E[a-z]*\).*/\* \(.*\) \*/, | \1\t-- ^ \2,' < error.h
 cat <<EOF
-    deriving (Typeable)
+    deriving (Eq, Typeable)
 EOF
 echo
 

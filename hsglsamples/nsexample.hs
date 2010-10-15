@@ -9,13 +9,17 @@ import System.IO
 import Data.NineP
 import Data.NineP.Bits
 import Data.List.Split
+import Control.Monad
 import System.FilePath
 import System.Directory
 import System.Environment
+import System.IO9.Error
 import System.IO9.DevLayer
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
-
+import Control.Monad.IO.Class
+import Control.Exception (throw)
+import Control.Monad.CatchIO hiding (throw)
 import System.IO9.DirStream
 import qualified Data.ByteString as B
 import Data.Enumerator hiding (head)
@@ -28,11 +32,25 @@ untilM p f = do
   if p x then return x
          else untilM p f
 
+handler :: (MonadIO m) => NineError -> NineError -> NameSpaceT m String
+
+handler ne e = case e == ne of
+  True -> let se = show e in dbgPrint ("Caught: " ++ se) >> return se
+  False -> throw e
+
+extest :: (MonadIO m, MonadCatchIO m) => NineError -> NameSpaceT m String
+
+extest e = (throw e >> return "Uncaught") `nsCatch` handler Enoerror 
+                                          `nsCatch` handler Emount
+                                          `nsCatch` handler Eunmount
+                                          `nsCatch` handler Eunion
+
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
   nsInit [dev] $ do
+    [Enoerror, Emount, Einuse, Eisdir] `forM` (\e -> extest e >>= dbgPrint)
     dbgPrint "NameSpace"
     nsBind BindRepl "#Z" "/"
     nsBind (BindBefore False) "/m2" "/m1"
