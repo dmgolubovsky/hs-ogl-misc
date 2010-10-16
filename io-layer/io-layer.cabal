@@ -1,4 +1,4 @@
-name:           io-layer 
+name:           nsio-layer 
 version:        0.1
 license:        BSD3
 maintainer:     golubovsky@gmail.com
@@ -28,4 +28,5 @@ exposed-modules:
     
 
 other-modules:
-
+    System.IO9.NameSpace.Monad, System.IO9.NameSpace.Types, System.IO9.NameSpace.Util,
+    System.IO9.NameSpace.Enumerator

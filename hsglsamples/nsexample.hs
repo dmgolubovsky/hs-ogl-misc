@@ -3,25 +3,19 @@
 module Main where
 
 import Data.Char
-import Data.Word
-import Data.Bits
 import System.IO
 import Data.NineP
 import Data.NineP.Bits
 import Data.List.Split
 import Control.Monad
 import System.FilePath
-import System.Directory
 import System.Environment
 import System.IO9.Error
-import System.IO9.DevLayer
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import Control.Monad.IO.Class
 import Control.Exception (throw)
 import Control.Monad.CatchIO hiding (throw)
-import System.IO9.DirStream
-import qualified Data.ByteString as B
 import Data.Enumerator hiding (head)
 import qualified Data.Text as T
 
