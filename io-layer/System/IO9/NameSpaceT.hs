@@ -20,6 +20,7 @@ module System.IO9.NameSpaceT (
  ,NameSpaceT
  ,nsInit
  ,dbgPrint
+ ,dbgChunks
  ,PathHandle (phCanon)
  ,nsBind
  ,nsEval
@@ -28,7 +29,9 @@ module System.IO9.NameSpaceT (
  ,nsStat
  ,nsWstat
  ,nsIterText
+ ,nsEnumText
  ,nsCatch
+ ,nsFinally
 ) where
 
 import Data.Bits

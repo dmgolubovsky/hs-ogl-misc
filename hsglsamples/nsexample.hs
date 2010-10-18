@@ -34,17 +34,19 @@ handler ne e = case e == ne of
 
 extest :: (MonadIO m, MonadCatchIO m) => NineError -> NameSpaceT m String
 
-extest e = (throw e >> return "Uncaught") `nsCatch` handler Enoerror 
-                                          `nsCatch` handler Emount
-                                          `nsCatch` handler Eunmount
-                                          `nsCatch` handler Eunion
+extest e = ((throw e >> return "Uncaught") `nsCatch` handler Enoerror 
+                                           `nsCatch` handler Emount
+                                           `nsCatch` handler Eunmount
+                                           `nsCatch` handler Eunion) `nsFinally` 
+                                             (dbgPrint $ "finally for " ++ show e)
 
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
   nsInit [dev] $ do
-    [Enoerror, Emount, Einuse, Eisdir] `forM` (\e -> extest e >>= dbgPrint)
+    ([Enoerror, Emount, Einuse] `forM` (\e -> extest e >>= dbgPrint)) `nsCatch` 
+      (\e -> dbgPrint ("Not caught: " ++ show e) >> return [()])
     dbgPrint "NameSpace"
     nsBind BindRepl "#Z" "/"
     nsBind (BindBefore False) "/m2" "/m1"
@@ -65,9 +67,8 @@ main = do
                                                         nsEval (dir </> "hello"))
     eit <- nsIterText eph 0
     run (enumList 2 [T.pack "Hello Привет\n"] $$ eit) >>= dbgPrint . show
+    run (nsEnumText eph $$ dbgChunks True) >>= dbgPrint . show
     return ()
-
-
 
 printFile h = do
   hGetContents h >>= putStrLn

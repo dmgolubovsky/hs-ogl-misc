@@ -14,8 +14,9 @@
 ------------------------------------------------------------------
 
 module System.IO9.NameSpace.Monad (
-  NameSpaceT (..),
-  nsCatch
+  NameSpaceT (..)
+ ,nsCatch
+ ,nsFinally
 ) where
 
 import Control.Monad.IO.Class
@@ -59,4 +60,16 @@ m `nsCatch` h = NameSpaceT $ do
            _ | isEOFError e -> runhnd Ehungup
            _ -> runhnd $ OtherError $ show e)])
 
+
+-- | Run a computation, and another computation afterward.
+
+nsFinally :: (C.MonadCatchIO m)
+          => NameSpaceT m a                    -- ^ Computation to run first
+          -> NameSpaceT m b                    -- ^ Computation to run afterward
+          -> NameSpaceT m a
+
+m `nsFinally` h = NameSpaceT $ do
+  env <- ask
+  let rx x = runNameSpaceT x `runReaderT` env
+  lift (rx m `C.finally` rx h)
 
