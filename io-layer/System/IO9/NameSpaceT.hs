@@ -28,7 +28,7 @@ module System.IO9.NameSpaceT (
  ,nsRemove
  ,nsStat
  ,nsWstat
- ,nsIterText
+ ,nsWithText
  ,nsEnumText
  ,nsCatch
  ,nsFinally

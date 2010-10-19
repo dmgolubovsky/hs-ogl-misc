@@ -14,7 +14,7 @@
 ------------------------------------------------------------------
 
 module System.IO9.NameSpace.Enumerator (
-   nsIterText
+   nsWithText
   ,nsEnumText
   ,liftIter
   ,dbgChunks
@@ -37,19 +37,22 @@ import qualified Data.Enumerator.Text as ET
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
--- | Open a 'T.Text' 'Iteratee' for the given path handle.
+-- | Open a 'T.Text' 'Iteratee' for the given path handle, use it, and close the handle
+-- afterwards.
   
-nsIterText :: (MonadIO m)
+nsWithText :: (MonadIO m, C.MonadCatchIO m)
            => PathHandle                  -- ^ Handle to iterate over
            -> Word8                       -- ^ Open mode (only c_OTRUNC is meaningful)
-           -> NameSpaceT m (Iteratee T.Text (NameSpaceT m) ())
+           -> (Iteratee T.Text (NameSpaceT m) () -> NameSpaceT m x)
+           -> NameSpaceT m x
 
-nsIterText ph om = do
+nsWithText ph om k = do
   h <- NameSpaceT $ liftIO $ do
     hh <- devOpen (phAttach ph) (c_OWRITE .|. (om .&. c_OTRUNC))
     hSetBuffering hh NoBuffering
     return hh
-  return $ liftIter $ ET.iterHandle h
+  let eit = liftIter $ ET.iterHandle h
+  k eit `nsFinally` (NameSpaceT $ liftIO $ hClose h)
 
 -- Lift an iteratee to NameSpaceT.
 
@@ -93,7 +96,7 @@ tryStep get io = do
 		Right t -> io t
 		Left err -> return $ Error err
 
--- |Print chunks as they're received from the enumerator, optionally
+-- | Print chunks as they're received from the enumerator, optionally
 -- printing empty chunks.
 
 dbgChunks :: (MonadIO m, Show a) => Bool -> Iteratee a (NameSpaceT m) ()

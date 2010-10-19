@@ -65,8 +65,9 @@ main = do
     eph <- (nsCreate ph "hello" 0o600) `nsCatch` (\e -> dbgPrint (show e) >>
                                                         dbgPrint "Reusing" >> 
                                                         nsEval (dir </> "hello"))
-    eit <- nsIterText eph 0
-    run (enumList 2 [T.pack "Hello Привет\n"] $$ eit) >>= dbgPrint . show
+    nsWithText eph 0 $ \eit ->
+      run (enumList 2 [T.pack "Hello Привет\n"] $$ joinI $ Data.Enumerator.map T.toUpper $$ eit) 
+        >>= dbgPrint . show
     run (nsEnumText eph $$ dbgChunks True) >>= dbgPrint . show
     return ()
 
