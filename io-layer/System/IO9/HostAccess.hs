@@ -68,9 +68,9 @@ devHost trees = do
 
 -- Attach a device. Returns an attachment descriptor for the selected tree.
 
-haattach :: DevTable -> M.Map FilePath FilePath -> FilePath -> IO DevAttach
+haattach :: DevTable -> M.Map FilePath FilePath -> ProcPriv -> FilePath -> IO DevAttach
 
-haattach tbl tmap tree = do
+haattach tbl tmap priv tree = do
   let mbhostfp = M.lookup tree tmap
   case mbhostfp of
     Nothing -> throwIO Ebadarg
@@ -80,6 +80,7 @@ haattach tbl tmap tree = do
       st <- getFileStatus hostfp
       when (not $ isDirectory st) $ throwIO Enotdir
       return DevAttach { devtbl = tbl
+                        ,devpriv = priv
                         ,devqid = stat2Qid st
                         ,devpath = "/"
                         ,devtree = tree}
@@ -100,6 +101,7 @@ walk' tbl tmap da fp = do
   npth <- objpath tmap da fp
   st <- getFileStatus npth
   return DevAttach { devtbl = tbl
+                    ,devpriv = devpriv da
                     ,devqid = stat2Qid st
                     ,devpath = normalise fp
                     ,devtree = devtree da}
@@ -161,6 +163,7 @@ hawstat tbl tmap da nst = do
       return (newpth, newdpth)
   nst <- getFileStatus newpath
   return DevAttach { devtbl = tbl
+                    ,devpriv = devpriv da
                     ,devqid = stat2Qid nst
                     ,devpath = newdp
                     ,devtree = devtree da}
@@ -195,6 +198,7 @@ hacreate tbl tmap da fp newperm = do
     _ -> D.createDirectory newpath uperm
   nst <- getFileStatus newpath
   return DevAttach { devtbl = tbl
+                    ,devpriv = devpriv da
                     ,devqid = stat2Qid nst
                     ,devpath = normalise (devpath da ++ "/" ++ fp)
                     ,devtree = devtree da}

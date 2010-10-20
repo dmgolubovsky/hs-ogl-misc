@@ -61,7 +61,8 @@ nsInit dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
   let dvm = M.fromList $ zip (map devchar dts) dts
       env = NsEnv {
-        kdtbl = dvm
+        priv = Init
+       ,kdtbl = dvm
        ,nspace = mv
       }
   runNameSpaceT nsi `runReaderT` env
@@ -84,19 +85,21 @@ nsBind _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || i
 nsBind fl new old | old == "/" && isDevice new = NameSpaceT $ do
   mv <- asks nspace
   dtb <- asks kdtbl
+  pv <- asks priv
   liftIO $ withNameSpace mv $ \ns -> case M.null ns of
     True -> do
       let newnorm = normalise new
-      attnew <- attdev newnorm `runReaderT` (dtb, ns)
+      attnew <- attdev newnorm `runReaderT` (dtb, ns, pv)
       let phnew = PathHandle {phAttach = attnew, phCanon = newnorm}
           ud = unionDir phnew
       return $ M.insert old (UnionPoint ud new) ns
-    False -> bind_common fl new old dtb ns
+    False -> bind_common fl new old dtb pv ns
 
 nsBind fl new old = NameSpaceT $ do
   mv <- asks nspace
   dtb <- asks kdtbl
-  liftIO $ withNameSpace mv $ bind_common fl new old dtb
+  pv <- asks priv
+  liftIO $ withNameSpace mv $ bind_common fl new old dtb pv
 
 -- | Evaluate a file path (absolute or device) using the current namespace. The function will try
 -- to evaluate the entire path given, so for file creation, strip the last (not-existing-yet) part
@@ -111,7 +114,8 @@ nsEval fp | not (isAbsolute fp || isDevice fp) =
 nsEval fp = NameSpaceT $ do
   ns <- asks nspace >>= liftIO . readMVar
   kd <- asks kdtbl
-  liftIO $ eval_common fp `runReaderT` (kd, ns)
+  pv <- asks priv
+  liftIO $ eval_common fp `runReaderT` (kd, ns, pv)
 
 -- | Create a new file or directory (set 'c_DMDIR' in the @mode@ argument).
 -- Creation in an union directory follows the Plan9 semantics by finding the

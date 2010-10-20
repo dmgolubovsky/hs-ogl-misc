@@ -25,6 +25,7 @@ import Control.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Control.Concurrent
+import Data.Tuple.Select
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
 import GHC.IO (catchException)
@@ -32,11 +33,11 @@ import qualified Data.DList as DL
 import qualified Data.Map as M
 
 
-bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable 
+bind_common :: BindFlag -> FilePath -> FilePath -> M.Map Char DevTable -> ProcPriv 
             -> NameSpace -> IO NameSpace
 
-bind_common fl new old dtb ns = do
-  let evalpath fp = eval_common fp `runReaderT` (dtb, ns)
+bind_common fl new old dtb pv ns = do
+  let evalpath fp = eval_common fp `runReaderT` (dtb, ns, pv)
   epnew <- evalpath new
   epold <- evalpath old
   let norm = normalise $ phCanon epold ++ "/"
@@ -53,7 +54,7 @@ bind_common fl new old dtb ns = do
 -- It operates on the immutable copy of the namespace, thus it uses a separate
 -- reader transformer.
 
-type EvalM = ReaderT (DevMap, NameSpace) IO
+type EvalM = ReaderT (DevMap, NameSpace, ProcPriv) IO
 
 eval_common :: FilePath -> EvalM PathHandle
 
@@ -66,7 +67,7 @@ eval_common fp = eval_root (splitPath fp) []
 eval_root :: [FilePath] -> [FilePath] -> EvalM PathHandle
 
 eval_root ("/" : rawps) _ = do
-  rootd <- asks snd >>= findroot
+  rootd <- asks sel2 >>= findroot
   eval_root (rootd : rawps) ["/"]
 
 -- If the path to evaluate is indeed a device path, attach the given device and tree
@@ -115,7 +116,7 @@ eval_step da (".." : rawps) orig eval = do
   let chop = reverse . tail . reverse                     -- chop the last element off
       origp = chop orig
       evalp = chop eval
-  up <- asks snd >>= return . M.lookup (joinPath origp)
+  up <- asks sel2 >>= return . M.lookup (joinPath origp)
   let neval = case up of
         Just (UnionPoint _ fp) -> splitPath fp
         _ -> evalp
@@ -134,7 +135,7 @@ eval_step da (rawp : rawps) orig eval = do
   let jeval = joinPath eval
       jorig = joinPath orig
       nrawp = normalise (rawp ++ if null rawps then "" else "/")
-  undirs <- asks snd >>= return . findunion jorig >>=  return . map dirph >>=
+  undirs <- asks sel2 >>= return . findunion jorig >>=  return . map dirph >>=
     \ps -> return (if null ps then [da] else map phAttach ps)
   foldr mplus (throw Enonexist) $ flip map undirs $ \dda -> do
     wda <- liftIO $ (devWalk dda nrawp `catchException` (\(e :: NineError) -> fail ""))
@@ -205,11 +206,12 @@ attdev :: FilePath -> EvalM DevAttach
 attdev fp | not (isDevice fp) = liftIO $ throwIO Ebadsharp
 
 attdev fp = do
-  kt <- asks fst
+  kt <- asks sel1
+  pr <- asks sel3
   let mbdt = M.lookup (deviceOf fp) kt
   liftIO $ case mbdt of
     Nothing -> throwIO Ebadsharp
-    Just dt -> devAttach dt (treeOf fp)
+    Just dt -> devAttach dt pr (treeOf fp)
   
 
 -- | Extract the device letter (if any) from the path. If this is not a device path,

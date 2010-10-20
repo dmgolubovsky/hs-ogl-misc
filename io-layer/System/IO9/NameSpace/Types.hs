@@ -76,7 +76,8 @@ type DevMap = M.Map Char DevTable
 -- (immutable), and a namespace itself (mutable transactional variable).
 
 data NsEnv = NsEnv {
-   kdtbl :: DevMap
+   priv :: ProcPriv
+  ,kdtbl :: DevMap
   ,nspace :: MVar NameSpace
 }
 

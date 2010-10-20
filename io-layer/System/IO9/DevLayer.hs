@@ -16,6 +16,7 @@
 module System.IO9.DevLayer (
   DevTable (..) 
  ,DevAttach (..)
+ ,ProcPriv (..)
  ,defDevTable
  ,devAttach
  ,devWalk
@@ -47,7 +48,7 @@ import Control.Exception
 
 data DevTable = DevTable {
    devchar :: Char                                   -- ^ Device character
-  ,attach_ :: FilePath -> IO DevAttach               -- ^ Attach a device with the given root
+  ,attach_ :: ProcPriv -> FilePath -> IO DevAttach   -- ^ Attach a device with the given root
   ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
                                                      --   (file or directory) any # levels
   ,open_ :: DevAttach -> Word8 -> IO Handle          -- ^ Open a handle on the given object
@@ -63,10 +64,21 @@ data DevTable = DevTable {
 
 data DevAttach = DevAttach {
    devtbl :: DevTable                            -- ^ Device which created this 'DevAttach'
+  ,devpriv :: ProcPriv                           -- ^ Attachment privileges (copied from process)
   ,devqid :: Qid                                 -- ^ Atributes of this object
   ,devpath :: FilePath                           -- ^ Path to this object from the server root
   ,devtree :: FilePath                           -- ^ Device tree (between # and /)
 }
+
+-- | Thread privileges. This structure somehow should belong to each thread. When
+-- a device is attached, it is placed into the attachment descriptor ('DevAttach').
+-- It is entirely up to the server/driver to interpret this value and grant or deny
+-- access to its resources.
+
+data ProcPriv = Init                             -- ^ The initial process
+              | Admin                            -- ^ Privileged administrative process
+              | HostOwner String                 -- ^ Host owner (who booted the host) user
+              | World String String              -- ^ Any external user woth name and group
 
 -- Show the full device path of the object in the attachment.
 
@@ -75,7 +87,7 @@ instance Show DevAttach where
 
 -- | Attach the given device and the root of its tree (use / by default).
 
-devAttach :: DevTable -> FilePath -> IO DevAttach
+devAttach :: DevTable -> ProcPriv -> FilePath -> IO DevAttach
 
 devAttach = attach_
 
@@ -136,7 +148,7 @@ devRemove da = remove_ (devtbl da) da
 defDevTable :: Char -> DevTable
 
 defDevTable c = DevTable { devchar = c
-                          ,attach_ = \_ -> throwIO notimpl
+                          ,attach_ = \_ _ -> throwIO notimpl
                           ,walk_ = \_ _ -> throwIO notimpl
                           ,open_ = \_ _ -> throwIO notimpl
                           ,create_ = \_ _ _ -> throwIO notimpl
