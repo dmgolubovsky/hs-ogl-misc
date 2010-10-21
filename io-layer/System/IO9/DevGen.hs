@@ -32,6 +32,7 @@ import Data.Bits
 import Data.NineP
 import Data.NineP.Bits
 import Data.Either
+import Data.IORef
 import System.FilePath
 import Control.Concurrent
 import System.IO9.DevLayer
@@ -48,7 +49,7 @@ import qualified Data.IntMap as I
 data DirTab = DirTab {
    dt_qid :: Qid                                 -- ^ Object Qid
   ,dt_perm :: Word32                             -- ^ Object permissions
-  ,dt_entry :: Either B.ByteString               -- ^ For a file, its contents
+  ,dt_entry :: Either (IORef B.ByteString)       -- ^ For a file, its contents
                       (M.Map FilePath Int)}      -- ^ For a directory, list of names
 
 -- | A type alias for a device top directory. All objects that device has are indexed here.
