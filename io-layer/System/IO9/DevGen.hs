@@ -23,7 +23,9 @@
 
 module System.IO9.DevGen (
   DirTab (..)
+ ,DirEntry (..)
  ,DevTop (..)
+ ,DevGen
  ,devGen
  ,genTopDir
  ,genAttach
@@ -56,8 +58,20 @@ import qualified Data.IntMap as I
 data DirTab = DirTab {
    dt_qid :: Qid                                 -- ^ Object Qid
   ,dt_perm :: Word32                             -- ^ Object permissions
-  ,dt_entry :: Either (IORef B.ByteString)       -- ^ For a file, its contents
-                      (M.Map FilePath Int)}      -- ^ For a directory, list of names
+  ,dt_entry :: DirEntry}                         -- ^ Entry itself
+
+-- | A data type to represent an entry in a device directory.
+
+data DirEntry = EmptyFile                        -- ^ An entry which is just a placeholder.
+                                                 -- It is used when initializing the device
+                                                 -- directory, and also when a concrete driver
+                                                 -- provides its own handlers for file manipulation.
+              | MemoryFile !(IORef B.ByteString) -- ^ A memory-backed file. This is default
+                                                 -- implementation of file storage by the generic
+                                                 -- driver. Its own file manipulation methods
+                                                 -- operate on such memory-backed files.
+              | DirMap (M.Map FilePath Int)      -- ^ For a directory entry, maintain a map
+                                                 -- of names into file indices.
 
 -- | A type alias for a device top directory. All objects that device has are indexed here.
 -- A new object gets index one more than the maximum index in the map, so indices are never
@@ -68,6 +82,12 @@ data DirTab = DirTab {
 
 type DevTop = M.Map FilePath (I.IntMap DirTab)
 
+-- | A type alias for a typical device initialization function.
+
+type DevGen = [(FilePath, [DirTab])]             -- ^ Initial contents
+            -> IO DevTable                       -- ^ Returns a populated device table
+ 
+
 -- | Given a list of device subtrees and their initial contents, build a device table
 -- whose methods are all default for a generic device. Concrete implementation may
 -- override some later. Assigning 'qid_path' values is up to the calling program.
@@ -75,12 +95,9 @@ type DevTop = M.Map FilePath (I.IntMap DirTab)
 -- 'qid_path' value within the whole subtree. Values of 'qid_path' must be unique within
 -- a subtree.
 
-devGen :: Char                                   -- ^ Device letter
-       -> [(FilePath, [DirTab])]                 -- ^ Initial contents
-       -> IO DevTable
+devGen :: MVar DevTop -> Char -> DevGen
 
-devGen c t = do
-  mtop <- genTopDir t
+devGen mtop c t = do
   let devtbl = (defDevTable c) {
     attach_ = genAttach devtbl mtop}
   return devtbl

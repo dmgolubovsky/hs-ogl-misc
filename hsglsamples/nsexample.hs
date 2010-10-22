@@ -11,6 +11,8 @@ import Control.Monad
 import System.FilePath
 import System.Environment
 import System.IO9.Error
+import System.IO9.DevGen
+import System.IO9.DevCons
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import Control.Monad.IO.Class
@@ -18,6 +20,7 @@ import Control.Exception (throw)
 import Control.Monad.CatchIO hiding (throw)
 import Data.Enumerator hiding (head)
 import qualified Data.Text as T
+import qualified Data.Map as M
 
 rootdir = "/home/dima/ns-root"
 
@@ -40,15 +43,21 @@ extest e = ((throw e >> return "Uncaught") `nsCatch` handler Enoerror
                                            `nsCatch` handler Eunion) `nsFinally` 
                                              (dbgPrint $ "finally for " ++ show e)
 
+contbl = [
+  DirTab (Qid c_QTDIR 0 0) 0o777 (DirMap $ M.fromList [("cons", 1)])
+ ,DirTab (Qid 0       0 1) 0o666 EmptyFile]
+
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
-  nsInit [dev] $ do
+  cons <- devCons [("/", contbl)]
+  nsInit [dev, cons] $ do
     ([Enoerror, Emount, Einuse] `forM` (\e -> extest e >>= dbgPrint)) `nsCatch` 
       (\e -> dbgPrint ("Not caught: " ++ show e) >> return [()])
     dbgPrint "NameSpace"
     nsBind BindRepl "#Z" "/"
+    nsBind (BindAfter False) "#c" "/dev"
     nsBind (BindBefore False) "/m2" "/m1"
     nsBind (BindBefore True) "/m3" "/m1"
     dbgPrint "Begin"
