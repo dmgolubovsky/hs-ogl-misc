@@ -43,7 +43,7 @@ import Control.Monad
 import System.FilePath
 import Control.Concurrent
 import System.IO9.Error
-import Control.Exception (throwIO)
+import Control.Exception (throw, throwIO)
 import System.IO9.DevLayer
 import qualified Data.ByteString as B
 import qualified Data.Map as M
@@ -57,6 +57,8 @@ import qualified Data.IntMap as I
 
 data DirTab = DirTab {
    dt_qid :: Qid                                 -- ^ Object Qid
+  ,dt_owner :: ProcPriv                          -- ^ Object owner
+  ,dt_time :: Word32                             -- ^ Last modification time, if possible
   ,dt_perm :: Word32                             -- ^ Object permissions
   ,dt_entry :: DirEntry}                         -- ^ Entry itself
 
@@ -99,7 +101,8 @@ devGen :: MVar DevTop -> Char -> DevGen
 
 devGen mtop c t = do
   let devtbl = (defDevTable c) {
-    attach_ = genAttach devtbl mtop}
+    attach_ = genAttach devtbl mtop
+   ,walk_ = genWalk devtbl mtop}
   return devtbl
 
 -- | Build the device toplevel directory and store it in a 'MVar'.
@@ -123,16 +126,16 @@ genTopDir t = do
 -- withMVar and modifyMVar (if modifying the directory) are recommended. In such case a method
 -- may just throw an exception or error when needed not worrying about releasing the top directory.
 
--- Attach the device at the given subtree. The generic implementation fails if the tree
+-- | Attach the device at the given subtree. The generic implementation fails if the tree
 -- does not exist (was not specified when instantiating the device). Concrete implementation
 -- may create subtrees on an ad-hoc basis. Device subtree name should not contain slashes
 -- unless it is "/".
 
-genAttach :: DevTable                            -- device table to store in the result
-          -> MVar DevTop                         -- mutable reference to the top directory
-          -> ProcPriv                            -- attachment privileges, as come from NS layer
-          -> FilePath                            -- device subtree (should not contain slashes)
-          -> IO DevAttach                        -- result
+genAttach :: DevTable                            -- ^ Device table to store in the result
+          -> MVar DevTop                         -- ^ Mutable reference to the top directory
+          -> ProcPriv                            -- ^ Attachment privileges, as come from NS layer
+          -> FilePath                            -- ^ Device subtree (should not contain slashes)
+          -> IO DevAttach                        -- ^ Result
 
 genAttach tbl mvtop priv tree | '/' `elem` tree && tree /= "/" = throwIO Ebadchar
 
@@ -153,4 +156,54 @@ genAttach tbl mvtop priv tree = withMVar mvtop $ \top -> do
                         ,devtree = tree}         -- copy subtree name
         
 
+-- | Walk the device to the desired file or directory.
+
+genWalk :: DevTable                              -- ^ Device table to store in the result
+        -> MVar DevTop                           -- ^ Mutable reference to the top directory
+        -> DevAttach                             -- ^ Attachment to the starting directory
+        -> FilePath                              -- ^ Destination, relative
+        -> IO DevAttach                          -- ^ Attachment descriptor for the destination
+
+genWalk tbl mvtop da fp | isAbsolute fp || isDevice fp || null fp = throwIO Ebadarg
+
+genWalk tbl mvtop da fp = withMVar mvtop $ \top -> do
+  let mbtopdir = M.lookup (devtree da) top       -- check if subtree exists
+  case mbtopdir of
+    Nothing -> throwIO Ebadarg                   -- subtree does not exist
+    Just topdir -> do
+      let fpsp = splitPath fp                    -- split the path into components
+          (dq, nfp) = onestep topdir 
+                              (qid_path $ devqid da) 
+                              fpsp 
+                              (splitPath $ devpath da) -- go stepwise
+      return da { devqid = dq                    -- fill in new Qid
+                 ,devpath = joinPath nfp}        -- normalized path
+
+-- Walk one step along the given path.
+
+onestep :: I.IntMap DirTab -> Word64 -> [FilePath] -> [FilePath] -> (Qid, [FilePath])
+
+onestep dmap qpath [] acc = case I.lookup (fromIntegral qpath) dmap of
+  Nothing -> throw Enonexist
+  Just dt -> (dt_qid dt, acc)
+
+onestep dmap qpath ("." : fps) acc = onestep dmap qpath fps acc -- skip dot and dot-slash
+onestep dmap qpath ("./" : fps) acc = onestep dmap qpath fps acc
+
+onestep dmap qpath (".." : fps) acc = onestep dmap qpath ("../" : fps) acc
+onestep dmap qpath ("../" : fps) [] = onestep dmap qpath fps [] -- do not go above subtree root
+onestep dmap qpath ("../" : fps) acc = onestep dmap qpath fps (reverse $ tail $ reverse acc)
+
+onestep dmap qpath (fp : fps) acc = case I.lookup (fromIntegral qpath) dmap of
+  Nothing -> throw Enonexist
+  Just dt -> case dt_entry dt of
+    DirMap emp -> case M.lookup (unslash fp) emp of
+      Nothing -> throw Enonexist
+      Just idx -> onestep dmap (fromIntegral idx) fps (acc ++ [fp])
+    _ | null fps -> (dt_qid dt, acc ++ [fp])
+    _ -> throw Enotdir
+
+unslash fp = reverse (u (reverse fp)) where
+  u ('/' : x) = x
+  u z = z
 
