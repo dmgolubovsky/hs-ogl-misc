@@ -26,8 +26,11 @@ module System.IO9.DevLayer (
  ,devRemove
  ,devCreate
  ,isDevice
+ ,deviceOf
+ ,treeOf
 ) where
 
+import Data.Char
 import Data.List
 import Data.Word
 import Data.Bits
@@ -164,5 +167,23 @@ isDevice :: FilePath -> Bool
 
 isDevice ('#':_) = True
 isDevice _ = False
+
+-- | Extract the device letter (if any) from the path. If this is not a device path,
+-- the 0 character is returned.
+
+deviceOf :: FilePath -> Char
+
+deviceOf ('#':d:_) = d
+deviceOf _ = chr 0
+
+-- | Extract the device file tree (if any) from the path. If this is not a device path
+-- an empty string is returned.
+
+treeOf :: FilePath -> FilePath
+
+treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in case tree of
+  "" -> "/"
+  _ -> tree
+treeOf _ = ""
 
 

@@ -29,8 +29,12 @@ module System.IO9.DevGen (
  ,devGen
  ,genTopDir
  ,genAttach
+ ,genStat
+ ,genSize
+ ,genUGID
 ) where
 
+import Data.Char
 import Data.List
 import Data.Word
 import Data.Bits
@@ -102,7 +106,8 @@ devGen :: MVar DevTop -> Char -> DevGen
 devGen mtop c t = do
   let devtbl = (defDevTable c) {
     attach_ = genAttach devtbl mtop
-   ,walk_ = genWalk devtbl mtop}
+   ,walk_ = genWalk devtbl mtop
+   ,stat_ = genStat devtbl mtop}
   return devtbl
 
 -- | Build the device toplevel directory and store it in a 'MVar'.
@@ -206,4 +211,53 @@ onestep dmap qpath (fp : fps) acc = case I.lookup (fromIntegral qpath) dmap of
 unslash fp = reverse (u (reverse fp)) where
   u ('/' : x) = x
   u z = z
+
+-- | Retrieve a 'Stat' structure for the given attachment descriptor.
+
+genStat :: DevTable                              -- ^ Device table to store in the result
+        -> MVar DevTop                           -- ^ Mutable reference to the top directory
+        -> DevAttach                             -- ^ File/directory whose 'Stat' is retrieved
+        -> IO Stat                               -- ^ Result
+
+genStat tbl mvtop da = withMVar mvtop $ \top -> do
+  let mbtopdir = M.lookup (devtree da) top       -- check if subtree exists
+  case mbtopdir of
+    Nothing -> throwIO Ebadarg                   -- subtree does not exist
+    Just topdir -> do
+      let mbdt = I.lookup (fromIntegral $ qid_path $ devqid da) topdir
+          dt = fromMaybe (throw Enonexist) mbdt
+          fname = head $ reverse $ splitPath $ devpath da
+          ug = genUGID (dt_owner dt)
+      fsize <- genSize (dt_entry dt)
+      return Stat {
+         st_typ = fromIntegral $ ord $ deviceOf $ devpath da
+        ,st_dev = 0
+        ,st_qid = dt_qid dt
+        ,st_mode = dt_perm dt
+        ,st_atime = dt_time dt
+        ,st_mtime = dt_time dt
+        ,st_length = fsize
+        ,st_name = fname
+        ,st_uid = fst ug
+        ,st_gid = snd ug
+        ,st_muid = fst ug}
+
+
+-- | Given the device directory entry file body, determine its size.
+
+genSize :: DirEntry -> IO Word64
+
+genSize (MemoryFile ibs) = readIORef ibs >>= return . fromIntegral . B.length
+
+genSize _ = return 0
+
+-- | Given the file owner privileges, determine user and group id.
+
+genUGID :: ProcPriv -> (String, String)
+
+genUGID Init = ("init", "init")
+genUGID Admin = ("adm", "adm")
+genUGID (HostOwner s) = (s, s)
+genUGID (World u g) = (u, g)
+
 

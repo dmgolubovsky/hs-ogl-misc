@@ -64,6 +64,7 @@ main = do
     dbgPrint "Begin"
     ph <- nsEval dir
     dbgPrint $ show ph
+    nsStat ph >>= dbgPrint . show
     nph <- nsCreate ph "test" 0o600
     dbgPrint $ show nph
     zph <- nsEval (phCanon nph)
@@ -78,7 +79,9 @@ main = do
     nsWithText eph 0 $ \eit ->
       run (enumList 2 [T.pack "Hello Привет\n"] $$ joinI $ Data.Enumerator.map T.toUpper $$ eit) 
         >>= dbgPrint . show
-    run (nsEnumText eph $$ dbgChunks True) >>= dbgPrint . show
+    con <- nsEval "/dev/cons"
+    nsWithText con 0 $ \c ->
+      run (nsEnumText eph $$ c) >>= dbgPrint . show
     return ()
 
 printFile h = do

@@ -214,24 +214,6 @@ attdev fp = do
     Just dt -> devAttach dt pr (treeOf fp)
   
 
--- | Extract the device letter (if any) from the path. If this is not a device path,
--- the 0 character is returned.
-
-deviceOf :: FilePath -> Char
-
-deviceOf ('#':d:_) = d
-deviceOf _ = chr 0
-
--- | Extract the device file tree (if any) from the path. If this is not a device path
--- an empty string is returned.
-
-treeOf :: FilePath -> FilePath
-
-treeOf fp@('#':_) = let (('#':_:tree):_) = splitPath fp in case tree of
-  "" -> "/"
-  _ -> tree
-treeOf _ = ""
-
 
 dbgPrint :: MonadIO m => String -> NameSpaceT m ()
 
