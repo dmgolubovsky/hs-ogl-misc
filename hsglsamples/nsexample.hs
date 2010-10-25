@@ -45,8 +45,8 @@ extest e = ((throw e >> return "Uncaught") `nsCatch` handler Enoerror
                                              (dbgPrint $ "finally for " ++ show e)
 
 contbl = [
-  DirTab (Qid c_QTDIR 0 0) Init 0 0o777 (DirMap $ M.fromList [("cons", 1)])
- ,DirTab (Qid 0       0 1) Init 0 0o666 EmptyFile]
+  DirTab (Qid c_QTDIR 0 0) Init 0 0o555 (DirMap $ M.fromList [("cons", 1)])
+ ,DirTab (Qid 0       0 1) Init 0 0o666 (HostHandle {hhr = Just stdin, hhw = Just stdout})]
 
 main = do
   args <- getArgs

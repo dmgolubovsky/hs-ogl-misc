@@ -40,6 +40,7 @@ import Data.Word
 import Data.Bits
 import Data.NineP
 import Data.NineP.Bits
+import Data.NineP.Posix
 import Data.Maybe
 import Data.Either
 import Data.IORef
@@ -49,6 +50,8 @@ import Control.Concurrent
 import System.IO9.Error
 import Control.Exception (throw, throwIO)
 import System.IO9.DevLayer
+import System.Posix.Files
+import GHC.IO.Handle
 import qualified Data.ByteString as B
 import qualified Data.Map as M
 import qualified Data.IntMap as I
@@ -72,12 +75,13 @@ data DirEntry = EmptyFile                        -- ^ An entry which is just a p
                                                  -- It is used when initializing the device
                                                  -- directory, and also when a concrete driver
                                                  -- provides its own handlers for file manipulation.
-              | MemoryFile !(IORef B.ByteString) -- ^ A memory-backed file. This is default
-                                                 -- implementation of file storage by the generic
-                                                 -- driver. Its own file manipulation methods
-                                                 -- operate on such memory-backed files.
+              | MemoryFile !(IORef B.ByteString) -- ^ A memory-backed read-writable file.
+              | BinConst B.ByteString            -- ^ Binary constant (read-only)
               | DirMap (M.Map FilePath Int)      -- ^ For a directory entry, maintain a map
                                                  -- of names into file indices.
+              | HostFile FilePath                -- ^ Host file (must exist)
+              | HostHandle {hhr :: Maybe Handle  -- ^ Host handle for reading
+                           ,hhw :: Maybe Handle} -- ^ Host handle for writing
 
 -- | A type alias for a device top directory. All objects that device has are indexed here.
 -- A new object gets index one more than the maximum index in the map, so indices are never
@@ -107,6 +111,7 @@ devGen mtop c t = do
   let devtbl = (defDevTable c) {
     attach_ = genAttach devtbl mtop
    ,walk_ = genWalk devtbl mtop
+   ,open_ = genOpen devtbl mtop
    ,stat_ = genStat devtbl mtop}
   return devtbl
 
@@ -230,7 +235,7 @@ genStat tbl mvtop da = withMVar mvtop $ \top -> do
           ug = genUGID (dt_owner dt)
       fsize <- genSize (dt_entry dt)
       return Stat {
-         st_typ = fromIntegral $ ord $ deviceOf $ devpath da
+         st_typ = fromIntegral $ ord $ devchar tbl
         ,st_dev = 0
         ,st_qid = dt_qid dt
         ,st_mode = dt_perm dt
@@ -243,11 +248,63 @@ genStat tbl mvtop da = withMVar mvtop $ \top -> do
         ,st_muid = fst ug}
 
 
+-- | Open a handle for the attachment descriptor provided. The generic device provides
+-- opening methods for all entry types except 'MemoryFile'. Concrete implementations
+-- must override this method if they use this type of files.
+
+genOpen :: DevTable                              -- ^ Device table to store in the result
+        -> MVar DevTop                           -- ^ Mutable reference to the top directory
+        -> DevAttach                             -- ^ File/directory whose 'Stat' is retrieved
+        -> Word8                                 -- ^ Open mode
+        -> IO Handle                             -- ^ Result 
+
+genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
+  let mbtopdir = M.lookup (devtree da) top       -- check if subtree exists
+  case mbtopdir of
+    Nothing -> throwIO Ebadarg                   -- subtree does not exist
+    Just topdir -> do
+      let mbdt = I.lookup (fromIntegral $ qid_path $ devqid da) topdir
+          dt = fromMaybe (throw Enonexist) mbdt
+          om' = om .&. 3
+      ckperm (dt_owner dt) (devpriv da) (dt_perm dt) om'
+      case dt_entry dt of
+        HostHandle hr hw -> do                   -- open a host handle. Mode arg selects which one.
+          let mbh = if om' == c_OREAD then hr else hw
+              h = fromMaybe (throw Emount) mbh
+          return h
+        _ -> throwIO $ OtherError "Open method not implemented"
+      
+
+-- Check if the requested open mode is permissible. Error is thrown if not.
+
+ckperm :: ProcPriv -> ProcPriv -> Word32 -> Word8 -> IO ()
+
+ckperm owner req perm om = do
+  let owug = genUGID owner
+      rqug = genUGID req
+      wrt m | m == c_OREAD = False
+            | otherwise = True
+      oread = fst owug == fst rqug && perm .&. (c_DMREAD `shiftL` oShift) /=0
+      gread = snd owug == snd rqug && perm .&. (c_DMREAD `shiftL` gShift) /=0
+      wread =                         perm .&. (c_DMREAD `shiftL` wShift) /=0
+      owrite = fst owug == fst rqug && perm .&. (c_DMWRITE `shiftL` oShift) /=0
+      gwrite = snd owug == snd rqug && perm .&. (c_DMWRITE `shiftL` gShift) /=0
+      wwrite =                         perm .&. (c_DMWRITE `shiftL` wShift) /=0
+      allow = (wrt om && (owrite || gwrite || wwrite)) ||
+              (not (wrt om) && (oread || gread || wread))
+  unless allow $ throwIO Eperm
+  return ()
+
+
 -- | Given the device directory entry file body, determine its size.
 
 genSize :: DirEntry -> IO Word64
 
 genSize (MemoryFile ibs) = readIORef ibs >>= return . fromIntegral . B.length
+
+genSize (BinConst b) = return $ fromIntegral $ B.length b
+
+genSize (HostFile fp) = getFileStatus fp >>= return . fromIntegral . fileSize
 
 genSize _ = return 0
 

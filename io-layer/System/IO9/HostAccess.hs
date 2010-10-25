@@ -19,6 +19,7 @@ module System.IO9.HostAccess (
 
 import Numeric
 import Prelude hiding (catch)
+import Data.Char
 import Data.Bits
 import Data.Word
 import Data.List
@@ -135,7 +136,8 @@ hastat tbl tmap da = do
   let np = case devpath da of
               "" -> "/"
               _ -> devpath da
-  stat2Stat st (head $ reverse $ splitPath np)
+  rst <- stat2Stat st (head $ reverse $ splitPath np)
+  return rst {st_typ = fromIntegral $ ord $ devchar tbl}
 
 -- Given the attachment descriptor, and the new Stat structure, change
 -- attributes of the object identified by the descriptor. Per 

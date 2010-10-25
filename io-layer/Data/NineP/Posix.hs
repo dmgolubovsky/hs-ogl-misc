@@ -18,6 +18,9 @@ module Data.NineP.Posix (
  ,stat2Stat
  ,mode2Mode
  ,omode2IOMode
+ ,oShift
+ ,gShift
+ ,wShift
 ) where
 
 import Data.Word
@@ -60,21 +63,21 @@ omode2IOMode m = f (m .&. (complement (c_OCEXEC .|. c_ORCLOSE)))
 
 -- Common map for Posix and 9P2000 mode flags.
 
-oshift = 6
-gshift = 3
-wshift = 0
+oShift = 6
+gShift = 3
+wShift = 0
 
 permmap :: [(FileMode, Word32)]
 
-permmap = [(ownerReadMode, c_DMREAD `shiftL` oshift)
-          ,(ownerWriteMode, c_DMWRITE `shiftL` oshift)
-          ,(ownerExecuteMode, c_DMEXEC `shiftL` oshift)
-          ,(groupReadMode, c_DMREAD `shiftL` gshift)
-          ,(groupWriteMode, c_DMWRITE `shiftL` gshift)
-          ,(groupExecuteMode, c_DMEXEC `shiftL` gshift)
-          ,(otherReadMode, c_DMREAD `shiftL` wshift)
-          ,(otherWriteMode, c_DMWRITE `shiftL` wshift)
-          ,(otherExecuteMode, c_DMEXEC `shiftL` wshift)
+permmap = [(ownerReadMode, c_DMREAD `shiftL` oShift)
+          ,(ownerWriteMode, c_DMWRITE `shiftL` oShift)
+          ,(ownerExecuteMode, c_DMEXEC `shiftL` oShift)
+          ,(groupReadMode, c_DMREAD `shiftL` gShift)
+          ,(groupWriteMode, c_DMWRITE `shiftL` gShift)
+          ,(groupExecuteMode, c_DMEXEC `shiftL` gShift)
+          ,(otherReadMode, c_DMREAD `shiftL` wShift)
+          ,(otherWriteMode, c_DMWRITE `shiftL` wShift)
+          ,(otherExecuteMode, c_DMEXEC `shiftL` wShift)
           ,(directoryMode, c_DMDIR)]
 
 -- | Build a filemode mask in terms of the 9P definition.
