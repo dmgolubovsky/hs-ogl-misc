@@ -3,7 +3,6 @@
 module Main where
 
 import Data.Char
-import System.IO
 import Data.NineP
 import Data.NineP.Bits
 import Data.List.Split
@@ -21,7 +20,6 @@ import Control.Exception (throw)
 import Control.Monad.CatchIO hiding (throw)
 import Data.Enumerator hiding (head)
 import qualified Data.Text as T
-import qualified Data.Map as M
 
 rootdir = "/home/dima/ns-root"
 
@@ -44,15 +42,11 @@ extest e = ((throw e >> return "Uncaught") `nsCatch` handler Enoerror
                                            `nsCatch` handler Eunion) `nsFinally` 
                                              (dbgPrint $ "finally for " ++ show e)
 
-contbl = [
-  DirTab (Qid c_QTDIR 0 0) Init 0 0o555 (DirMap $ M.fromList [("cons", 1)])
- ,DirTab (Qid 0       0 1) Init 0 0o666 (HostHandle {hhr = Just stdin, hhw = Just stdout})]
-
 main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
-  cons <- devCons [("/", contbl)]
+  cons <- devCons
   nsInit [dev, cons] $ do
     ([Enoerror, Emount, Einuse] `forM` (\e -> extest e >>= dbgPrint)) `nsCatch` 
       (\e -> dbgPrint ("Not caught: " ++ show e) >> return [()])
@@ -79,22 +73,12 @@ main = do
     nsWithText eph 0 $ \eit ->
       run (enumList 2 [T.pack "Hello Привет\n"] $$ joinI $ Data.Enumerator.map T.toUpper $$ eit) 
         >>= dbgPrint . show
+    hst <- nsEval "/dev/hostowner"
     con <- nsEval "/dev/cons"
-    nsWithText con 0 $ \c ->
+    nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
+      run (nsEnumText hst $$ c) >>= dbgPrint . show
+    
     return ()
-
-printFile h = do
-  hGetContents h >>= putStrLn
-  return ()
-
-
-printDir s = do
-  untilM (==True) $ do
-    b <- hGetLine s
-    mapM putStrLn $ wordsBy (==(chr 0)) b
-    hIsEOF s
-  return ()
- 
 
 

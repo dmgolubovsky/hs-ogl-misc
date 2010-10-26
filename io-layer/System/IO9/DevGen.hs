@@ -25,7 +25,6 @@ module System.IO9.DevGen (
   DirTab (..)
  ,DirEntry (..)
  ,DevTop (..)
- ,DevGen
  ,devGen
  ,genTopDir
  ,genAttach
@@ -33,6 +32,7 @@ module System.IO9.DevGen (
  ,genSize
  ,genUGID
  ,genPerm
+ ,dirTab
 ) where
 
 import Data.Char
@@ -93,12 +93,6 @@ data DirEntry = EmptyFile                        -- ^ An entry which is just a p
 
 type DevTop = M.Map FilePath (I.IntMap DirTab)
 
--- | A type alias for a typical device initialization function.
-
-type DevGen = [(FilePath, [DirTab])]             -- ^ Initial contents
-            -> IO DevTable                       -- ^ Returns a populated device table
- 
-
 -- | Given a list of device subtrees and their initial contents, build a device table
 -- whose methods are all default for a generic device. Concrete implementation may
 -- override some later. Assigning 'qid_path' values is up to the calling program.
@@ -106,9 +100,9 @@ type DevGen = [(FilePath, [DirTab])]             -- ^ Initial contents
 -- 'qid_path' value within the whole subtree. Values of 'qid_path' must be unique within
 -- a subtree.
 
-devGen :: MVar DevTop -> Char -> DevGen
+devGen :: MVar DevTop -> Char -> IO DevTable
 
-devGen mtop c t = do
+devGen mtop c = do
   let devtbl = (defDevTable c) {
     attach_ = genAttach devtbl mtop
    ,walk_ = genWalk devtbl mtop
@@ -327,4 +321,19 @@ genUGID :: ProcPriv -> (String, String)
 genUGID (World u g) = (u, g)                     -- random non-local user
 genUGID None = ("none", "none")                  -- nobody (server processes run with this)
 genUGID _ = ("~", "~")                           -- hostowner: will be substituted with actual name
+
+-- | A helper function to create a 'DirTab' entry, with zero access time and
+-- HostOwner as the owner. The directory bit is determined upon the last 'DirEntry' argument.
+
+dirTab :: Word64                                 -- ^ Becomes 'qid_path'
+       -> Word32                                 -- ^ Initial permissions
+       -> DirEntry                               -- ^ Object body
+       -> DirTab                                 -- ^ Result
+
+
+dirTab path perm ent =
+  let qt = case ent of
+        DirMap _ -> c_QTDIR
+        _ -> 0
+  in  DirTab (Qid qt 0 path) HostOwner 0 perm ent
 

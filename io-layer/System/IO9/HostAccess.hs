@@ -165,6 +165,11 @@ hawstat :: DevTable -> M.Map FilePath FilePath -> DevAttach -> Stat -> IO DevAtt
 hawstat tbl tmap da nst = do
   npth <- objpath tmap da (devpath da)
   st <- getFileStatus npth
+  let parent = joinPath . reverse . tail . reverse $ splitPath npth
+  dst <- getFileStatus parent
+  let dirperm = stat2Mode dst
+      priv = devpriv da
+  genPerm priv dirperm c_OWRITE
   (newpath, newdp) <- case (null $ st_name nst) of
     True -> return (npth, devpath da)
     False -> do
@@ -199,6 +204,8 @@ hacreate tbl tmap da fp newperm = do
       actperm = calcPerm newperm dirperm
       uperm = mode2Mode actperm
       badmask = c_DMEXCL .|. c_DMAPPEND .|. c_DMDEVICE .|. c_DMAUTH -- not supported by this driver
+      priv = devpriv da
+  genPerm priv dirperm c_OWRITE
   when ((actperm .&. badmask) /= 0) $ throwIO Ebadarg
   newpath <- canonicalizePath $ normalise (dpth ++ "/" ++ fp)
   unless (length spp == 1) $ throwIO Ebadarg
