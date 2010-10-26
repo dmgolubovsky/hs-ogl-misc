@@ -46,6 +46,7 @@ import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Exception
+import System.Posix.User
 import qualified Data.Map as M
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
@@ -59,9 +60,11 @@ nsInit :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
 
 nsInit dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
+  hu <- liftIO getLoginName
   let dvm = M.fromList $ zip (map devchar dts) dts
       env = NsEnv {
-        priv = Init
+        hown = hu
+       ,priv = Init
        ,kdtbl = dvm
        ,nspace = mv
       }
@@ -163,7 +166,14 @@ nsStat :: MonadIO m
        => PathHandle                      -- ^ Handle of the object whose attributes are requested
        -> NameSpaceT m Stat               -- ^ Result
 
-nsStat ph = NameSpaceT $ liftIO $ devStat (phAttach ph)
+nsStat ph = NameSpaceT $ do
+  st <- liftIO $ devStat (phAttach ph)
+  u <- asks hown
+  let un "~" = u
+      un z = z
+  return st {st_gid = un $ st_gid st
+            ,st_uid = un $ st_uid st
+            ,st_muid = un $ st_muid st}
 
 -- | Change some attributes of a file or directory. See <http://man.cat-v.org/plan_9/5/stat>.
 -- If the 'st_name' member of the provided 'Stat' structure contains a slash, error

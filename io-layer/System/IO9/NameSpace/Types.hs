@@ -74,9 +74,11 @@ type DevMap = M.Map Char DevTable
 
 -- Namespace execution environment consists of the kernel devices table
 -- (immutable), and a namespace itself (mutable transactional variable).
+-- It also contains the current process privileges, and host owner name.
 
 data NsEnv = NsEnv {
-   priv :: ProcPriv
+   hown :: String
+  ,priv :: ProcPriv
   ,kdtbl :: DevMap
   ,nspace :: MVar NameSpace
 }

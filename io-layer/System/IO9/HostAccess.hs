@@ -37,6 +37,7 @@ import System.FilePath
 import System.Directory
 import System.IO9.Error
 import System.IO9.DirStream
+import System.IO9.DevGen
 import qualified Data.Map as M
 
 -- | Create a device table using a map of tree names to host filesystem trees.
@@ -118,6 +119,9 @@ haopen tbl tmap da flg = do
   when (flg .&. c_ORCLOSE /= 0) (throwIO Ebadarg)
   npth <- objpath tmap da (devpath da)
   st <- getFileStatus npth
+  let xperm = stat2Mode st
+      priv = devpriv da
+  genPerm priv xperm flg
   case isDirectory st of
     True -> do
       when (flg /= c_OREAD) $ throwIO Ebadarg
@@ -126,7 +130,9 @@ haopen tbl tmap da flg = do
       let iom = omode2IOMode flg
       openFile npth iom
 
--- Given an attachment dessriptor, return object status.  
+-- Given an attachment dessriptor, return object status. The local access server
+-- considers all files owned by the hostowner. Thus tildes will be placed into
+-- proper fields of the returned structure.
 
 hastat :: DevTable -> M.Map FilePath FilePath -> DevAttach -> IO Stat
 
@@ -137,7 +143,10 @@ hastat tbl tmap da = do
               "" -> "/"
               _ -> devpath da
   rst <- stat2Stat st (head $ reverse $ splitPath np)
-  return rst {st_typ = fromIntegral $ ord $ devchar tbl}
+  return rst {st_typ = fromIntegral $ ord $ devchar tbl
+             ,st_uid = "~"
+             ,st_gid = "~"
+             ,st_muid = "~"}
 
 -- Given the attachment descriptor, and the new Stat structure, change
 -- attributes of the object identified by the descriptor. Per 

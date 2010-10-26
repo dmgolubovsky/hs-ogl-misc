@@ -32,6 +32,7 @@ module System.IO9.DevGen (
  ,genStat
  ,genSize
  ,genUGID
+ ,genPerm
 ) where
 
 import Data.Char
@@ -266,33 +267,44 @@ genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
       let mbdt = I.lookup (fromIntegral $ qid_path $ devqid da) topdir
           dt = fromMaybe (throw Enonexist) mbdt
           om' = om .&. 3
-      ckperm (dt_owner dt) (devpriv da) (dt_perm dt) om'
+      genPerm (devpriv da) (dt_perm dt) om'
       case dt_entry dt of
         HostHandle hr hw -> do                   -- open a host handle. Mode arg selects which one.
           let mbh = if om' == c_OREAD then hr else hw
-              h = fromMaybe (throw Emount) mbh
+              h = fromMaybe (throw Eperm) mbh
           return h
         _ -> throwIO $ OtherError "Open method not implemented"
       
 
--- Check if the requested open mode is permissible. Error is thrown if not.
+-- | Check if the requested open mode is permissible. Error is thrown if not.
+-- The general logic for local drivers/servers: user section corresponds to
+-- hostowner rights; world section corresponds to everyone else rights;
+-- "none" gets denied any access (servers should use authentication to obtain
+-- proper attachment descriptors). Group permissions are ignored. All local
+-- files are supposed to be owned by the hostowner whoever the name is.
 
-ckperm :: ProcPriv -> ProcPriv -> Word32 -> Word8 -> IO ()
+genPerm :: ProcPriv -> Word32 -> Word8 -> IO ()
 
-ckperm owner req perm om = do
-  let owug = genUGID owner
-      rqug = genUGID req
+genPerm req perm om = do
+  let rqug = genUGID req
+      rqu = fst rqug
       wrt m | m == c_OREAD = False
+            | m == c_OEXEC = False
             | otherwise = True
-      oread = fst owug == fst rqug && perm .&. (c_DMREAD `shiftL` oShift) /=0
-      gread = snd owug == snd rqug && perm .&. (c_DMREAD `shiftL` gShift) /=0
-      wread =                         perm .&. (c_DMREAD `shiftL` wShift) /=0
-      owrite = fst owug == fst rqug && perm .&. (c_DMWRITE `shiftL` oShift) /=0
-      gwrite = snd owug == snd rqug && perm .&. (c_DMWRITE `shiftL` gShift) /=0
-      wwrite =                         perm .&. (c_DMWRITE `shiftL` wShift) /=0
-      allow = (wrt om && (owrite || gwrite || wwrite)) ||
-              (not (wrt om) && (oread || gread || wread))
-  unless allow $ throwIO Eperm
+      rd  m | m == c_OREAD = True
+            | otherwise = False
+      exe m | m == c_OEXEC = True
+            | otherwise = False
+      oread = rqu == "~" && perm .&. (c_DMREAD `shiftL` oShift) /=0
+      wread =               perm .&. (c_DMREAD `shiftL` wShift) /=0
+      owrite = rqu == "~" && perm .&. (c_DMWRITE `shiftL` oShift) /=0
+      wwrite =               perm .&. (c_DMWRITE `shiftL` gShift) /=0
+      oexec = rqu == "~" && perm .&. (c_DMEXEC `shiftL` oShift) /=0
+      wexec =               perm .&. (c_DMEXEC `shiftL` wShift) /=0
+      allow = (wrt om && (owrite || wwrite)) ||
+              (rd  om && (oread  || wread)) ||
+              (exe om && (oexec  || wexec))
+  unless (allow && rqu /= "none") $ throwIO Eperm
   return ()
 
 
@@ -312,9 +324,7 @@ genSize _ = return 0
 
 genUGID :: ProcPriv -> (String, String)
 
-genUGID Init = ("init", "init")
-genUGID Admin = ("adm", "adm")
-genUGID (HostOwner s) = (s, s)
-genUGID (World u g) = (u, g)
-
+genUGID (World u g) = (u, g)                     -- random non-local user
+genUGID None = ("none", "none")                  -- nobody (server processes run with this)
+genUGID _ = ("~", "~")                           -- hostowner: will be substituted with actual name
 
