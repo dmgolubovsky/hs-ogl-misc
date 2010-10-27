@@ -49,6 +49,7 @@ import Control.Monad
 import System.FilePath
 import Control.Concurrent
 import System.IO9.Error
+import System.IO9.MemoryStream
 import Control.Exception (throw, throwIO)
 import System.IO9.DevLayer
 import System.Posix.Files
@@ -267,8 +268,11 @@ genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
           let mbh = if om' == c_OREAD then hr else hw
               h = fromMaybe (throw Eperm) mbh
           return h
+        BinConst bs -> openConstHandle (devpath da) bs
         _ -> throwIO $ OtherError "Open method not implemented"
       
+
+-- Open a 'Handle' 
 
 -- | Check if the requested open mode is permissible. Error is thrown if not.
 -- The general logic for local drivers/servers: user section corresponds to

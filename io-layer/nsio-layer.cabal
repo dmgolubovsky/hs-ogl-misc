@@ -23,7 +23,7 @@ extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 exposed-modules:
     Data.NineP.Bits, Data.NineP.Posix, 
     GHC.IO.CSPHandle, 
-    System.IO9.Error, System.IO9.DirStream,
+    System.IO9.Error, System.IO9.DirStream, System.IO9.MemoryStream,
     System.IO9.DevLayer, System.IO9.NameSpaceT,
     System.IO9.DevGen, System.IO9.HostAccess,
     System.IO9.DevCons

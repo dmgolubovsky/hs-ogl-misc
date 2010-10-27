@@ -23,8 +23,9 @@ module System.IO9.DevLayer (
  ,devOpen
  ,devStat
  ,devWstat
- ,devRemove
  ,devCreate
+ ,devRemove
+ ,devClone
  ,isDevice
  ,deviceOf
  ,treeOf
@@ -60,6 +61,7 @@ data DevTable = DevTable {
                                                      --   'DevAttach' provided
   ,stat_ :: DevAttach -> IO Stat                     -- ^ Obtain object attributes
   ,wstat_ :: DevAttach -> Stat -> IO DevAttach       -- ^ Change some object attributes
+  ,clone_ :: IO DevTable                             -- ^ Clone device interface (privileged op)
 }
 
 -- | Device attachment. This data structure represents a file or a directory
@@ -147,6 +149,16 @@ devRemove :: DevAttach -> IO ()
 
 devRemove da = remove_ (devtbl da) da
 
+-- | Clone device interface ('DevTable'). This is a privileged operation that only
+-- the "kernel" may invoke in order to create a specialized clone of the device.
+-- Only few drivers really need to implement it. An example of such cloneable
+-- device may be a pipe provider which has to have a separate instance for
+-- each pair of processes in order to separate pipes that other processes use.
+
+devClone :: DevTable -> IO DevTable
+
+devClone = clone_
+
 -- | Default device table with all device functions throwing an error.
 
 defDevTable :: Char -> DevTable
@@ -158,7 +170,8 @@ defDevTable c = DevTable { devchar = c
                           ,create_ = \_ _ _ -> throwIO notimpl
                           ,remove_ = \_ -> throwIO notimpl
                           ,stat_ = \_ -> throwIO notimpl
-                          ,wstat_ = \_ _ -> throwIO notimpl} where
+                          ,wstat_ = \_ _ -> throwIO notimpl
+                          ,clone_ = throwIO notimpl} where
   notimpl = OtherError "Device function not implemented"
 
 -- | Return 'True' is the given path is a device path (starts with #).
