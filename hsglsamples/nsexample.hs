@@ -75,10 +75,13 @@ main = do
         >>= dbgPrint . show
     hst <- nsEval "/dev/hostowner"
     con <- nsEval "/dev/cons"
+    nul <- nsEval "/dev/null"
+    zer <- nsEval "/dev/zero"
     nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
-    
+    nsWithText nul 0 $ \n -> do
+      run (nsEnumText zer $$ n) >>= dbgPrint . show
     return ()
 
 

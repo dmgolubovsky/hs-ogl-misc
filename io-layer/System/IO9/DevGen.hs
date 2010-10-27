@@ -46,6 +46,7 @@ import Data.Maybe
 import Data.Either
 import Data.IORef
 import Control.Monad
+import System.IO
 import System.FilePath
 import Control.Concurrent
 import System.IO9.Error
@@ -81,7 +82,7 @@ data DirEntry = EmptyFile                        -- ^ An entry which is just a p
               | BinConst B.ByteString            -- ^ Binary constant (read-only)
               | DirMap (M.Map FilePath Int)      -- ^ For a directory entry, maintain a map
                                                  -- of names into file indices.
-              | HostFile FilePath                -- ^ Host file (must exist)
+              | HostFile FilePath                -- ^ Host file (must exist and will be open as file)
               | HostHandle {hhr :: Maybe Handle  -- ^ Host handle for reading
                            ,hhw :: Maybe Handle} -- ^ Host handle for writing
 
@@ -269,10 +270,11 @@ genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
               h = fromMaybe (throw Eperm) mbh
           return h
         BinConst bs -> openConstHandle (devpath da) bs
+        HostFile fp -> do
+          let iom = omode2IOMode om
+          openFile fp iom
         _ -> throwIO $ OtherError "Open method not implemented"
       
-
--- Open a 'Handle' 
 
 -- | Check if the requested open mode is permissible. Error is thrown if not.
 -- The general logic for local drivers/servers: user section corresponds to

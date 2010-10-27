@@ -58,6 +58,7 @@ constClose (ConstDev buf sp) = do
 readconst :: Int -> B.ByteString -> ContSPFun
 
 readconst off buf f x p a = case off of
+  0 | B.null buf -> return ContEOF
   0 -> return $ ContBuff buf (readconst (B.length buf) B.empty)
   _ -> return $ ContEOF
 
