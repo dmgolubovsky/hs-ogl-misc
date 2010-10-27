@@ -41,5 +41,5 @@ devCons = do
        ,dirTab 4 0o444 (HostFile "/dev/zero")]
   mtop <- genTopDir [("/", contbl)]
   gentbl <- devGen mtop 'c'
-  return gentbl
+  return gentbl {devname = "cons"}
 

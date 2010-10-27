@@ -106,7 +106,8 @@ devGen :: MVar DevTop -> Char -> IO DevTable
 
 devGen mtop c = do
   let devtbl = (defDevTable c) {
-    attach_ = genAttach devtbl mtop
+    devname = "generic"
+   ,attach_ = genAttach devtbl mtop
    ,walk_ = genWalk devtbl mtop
    ,open_ = genOpen devtbl mtop
    ,stat_ = genStat devtbl mtop}
@@ -268,7 +269,7 @@ genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
         HostHandle hr hw -> do                   -- open a host handle. Mode arg selects which one.
           let mbh = if om' == c_OREAD then hr else hw
               h = fromMaybe (throw Eperm) mbh
-          return h
+          hDuplicate h
         BinConst bs -> openConstHandle (devpath da) bs
         HostFile fp -> do
           let iom = omode2IOMode om

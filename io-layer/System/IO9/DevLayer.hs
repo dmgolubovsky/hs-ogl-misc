@@ -52,6 +52,7 @@ import Control.Exception
 
 data DevTable = DevTable {
    devchar :: Char                                   -- ^ Device character
+  ,devname :: String                                 -- ^ Device description (for /dev/drivers)
   ,attach_ :: ProcPriv -> FilePath -> IO DevAttach   -- ^ Attach a device with the given root
   ,walk_ :: DevAttach -> FilePath -> IO DevAttach    -- ^ Walk to the object with given name 
                                                      --   (file or directory) any # levels
@@ -164,6 +165,7 @@ devClone = clone_
 defDevTable :: Char -> DevTable
 
 defDevTable c = DevTable { devchar = c
+                          ,devname = "default non-funcitonal device"
                           ,attach_ = \_ _ -> throwIO notimpl
                           ,walk_ = \_ _ -> throwIO notimpl
                           ,open_ = \_ _ -> throwIO notimpl
