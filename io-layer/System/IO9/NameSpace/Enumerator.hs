@@ -16,6 +16,7 @@
 module System.IO9.NameSpace.Enumerator (
    nsWithText
   ,nsEnumText
+  ,nsEnumDir
   ,liftIter
   ,dbgChunks
 ) where
@@ -23,14 +24,21 @@ module System.IO9.NameSpace.Enumerator (
 import Data.Word
 import Data.Bits
 import System.IO
+import Data.NineP
 import Data.NineP.Bits
 import System.IO.Error
+import System.IO9.Error
+import Control.Monad
+import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import System.IO9.NameSpace.Monad
+import System.IO9.NameSpace.Util
 import System.IO9.NameSpace.Types
 import System.IO9.DevLayer
-import Data.Enumerator
+import Data.Enumerator hiding (map)
+import Data.List.Split
 import qualified Control.Exception as X
 import qualified Control.Monad.CatchIO as C
 import qualified Data.Enumerator.Text as ET
@@ -95,6 +103,36 @@ tryStep get io = do
 	case tried of
 		Right t -> io t
 		Left err -> return $ Error err
+
+-- | Enumerate a unioned directory. This enumerator expects an iteratee capable
+-- of receiving a stream of 'Stat' structures.
+
+nsEnumDir :: (MonadIO m, C.MonadCatchIO m)
+          => PathHandle                   -- ^ Handle of a directory to enumerate
+          -> Enumerator Stat (NameSpaceT m) b
+
+nsEnumDir (PathHandle (DevAttach {devqid = q}) _) s | qid_typ q .&. c_QTDIR == 0 =
+  throwError Enotdir
+
+nsEnumDir ph s = Iteratee $ do
+  bds <- NameSpaceT $ do
+    ns <- asks nspace >>= liftIO . readMVar
+    u <- asks hown
+    let fu = findunion (phCanon ph) ns
+        phs = case fu of
+          [] -> [ph]
+          _  -> map dirph fu
+    ss <- forM phs $ \p -> liftIO $ (do
+      let pda = phAttach p
+      h <- devOpen pda c_OREAD
+      fns <- hGetContents h >>= return . wordsBy (== '\000')
+      forM fns $ \f -> devWalk pda f >>= devStat) `X.catch` (\(e :: X.SomeException) -> return [])
+    return $ map (mapUser u) $ concat ss
+  loop bds s where
+    loop [] (Continue k) = return (Continue k)
+    loop (l:ls) (Continue k) = runIteratee (k (Chunks [l])) >>= loop ls
+    loop l z = return z
+        
 
 -- | Print chunks as they're received from the enumerator, optionally
 -- printing empty chunks.

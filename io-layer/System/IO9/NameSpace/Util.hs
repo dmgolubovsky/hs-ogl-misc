@@ -17,6 +17,7 @@
 module System.IO9.NameSpace.Util where
 
 import Data.Char
+import Data.NineP
 import System.FilePath
 import System.IO9.Error
 import System.IO9.DevLayer
@@ -235,4 +236,16 @@ addUnion (UnionDir dl) ph bf = case bf of
   BindRepl -> unionDir ph
   BindBefore cr -> UnionDir $ DL.cons (BoundDir {dirph = ph, dirfl = bf, dircr = cr}) dl
   BindAfter cr -> UnionDir $ DL.snoc dl (BoundDir {dirph = ph, dirfl = bf, dircr = cr})
+
+-- | Map username in a 'Stat' to the hostowner user if it is a "~"
+
+mapUser :: String -> Stat -> Stat
+
+mapUser u st = 
+  let un "~" = u
+      un z = z
+  in  st {st_gid = un $ st_gid st
+         ,st_uid = un $ st_uid st
+         ,st_muid = un $ st_muid st}
+
 

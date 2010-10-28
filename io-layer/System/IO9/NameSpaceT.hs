@@ -30,6 +30,7 @@ module System.IO9.NameSpaceT (
  ,nsWstat
  ,nsWithText
  ,nsEnumText
+ ,nsEnumDir
  ,nsCatch
  ,nsFinally
 ) where
@@ -169,11 +170,7 @@ nsStat :: MonadIO m
 nsStat ph = NameSpaceT $ do
   st <- liftIO $ devStat (phAttach ph)
   u <- asks hown
-  let un "~" = u
-      un z = z
-  return st {st_gid = un $ st_gid st
-            ,st_uid = un $ st_uid st
-            ,st_muid = un $ st_muid st}
+  return $ mapUser u st
 
 -- | Change some attributes of a file or directory. See <http://man.cat-v.org/plan_9/5/stat>.
 -- If the 'st_name' member of the provided 'Stat' structure contains a slash, error

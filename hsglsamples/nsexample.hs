@@ -79,8 +79,8 @@ main = do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
     nsWithText con 0 $ \c -> do
-      run (nsEnumText eph $$ c) >>= dbgPrint . show
-      run (nsEnumText hst $$ c) >>= dbgPrint . show
+      run (nsEnumDir ph $$ joinI $ Data.Enumerator.map (T.pack . flip shows "\n") $$ c) 
+        >>= dbgPrint . show
     return ()
 
 
