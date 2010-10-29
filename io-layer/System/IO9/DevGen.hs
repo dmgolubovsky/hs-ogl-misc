@@ -28,6 +28,7 @@ module System.IO9.DevGen (
  ,devGen
  ,genTopDir
  ,genAttach
+ ,genWalk
  ,genStat
  ,genSize
  ,genUGID
@@ -56,6 +57,7 @@ import System.IO9.DevLayer
 import System.Posix.Files
 import GHC.IO.Handle
 import qualified Data.ByteString as B
+import qualified Data.ByteString.UTF8 as C
 import qualified Data.Map as M
 import qualified Data.IntMap as I
 
@@ -274,6 +276,9 @@ genOpen tbl mvtop da om = withMVar mvtop $ \top -> do
         HostFile fp -> do
           let iom = omode2IOMode om
           openFile fp iom
+        DirMap mp -> do
+          let bs = C.fromString $ concatMap (++ "\000") (M.keys mp)
+          openConstHandle (devpath da) bs        -- NB: handle type will be RegularFile
         _ -> throwIO $ OtherError "Open method not implemented"
       
 

@@ -57,6 +57,10 @@ main = do
     nsBind (BindBefore True) "/m3" "/m1"
     dbgPrint "Begin"
     ph <- nsEval dir
+    con <- nsEval "/dev/cons"
+    nsWithText con 0 $ \c -> do
+      run (nsEnumDir ph $$ joinI $ Data.Enumerator.map (T.pack . flip shows "\n") $$ c) 
+        >>= dbgPrint . show
     dbgPrint $ show ph
     nsStat ph >>= dbgPrint . show
     nph <- nsCreate ph "test" 0o600
@@ -74,13 +78,9 @@ main = do
       run (enumList 2 [T.pack "Hello Привет\n"] $$ joinI $ Data.Enumerator.map T.toUpper $$ eit) 
         >>= dbgPrint . show
     hst <- nsEval "/dev/hostowner"
-    con <- nsEval "/dev/cons"
     nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
-    nsWithText con 0 $ \c -> do
-      run (nsEnumDir ph $$ joinI $ Data.Enumerator.map (T.pack . flip shows "\n") $$ c) 
-        >>= dbgPrint . show
     return ()
 
 

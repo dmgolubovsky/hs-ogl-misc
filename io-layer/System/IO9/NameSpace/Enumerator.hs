@@ -115,20 +115,21 @@ nsEnumDir (PathHandle (DevAttach {devqid = q}) _) s | qid_typ q .&. c_QTDIR == 0
   throwError Enotdir
 
 nsEnumDir ph s = Iteratee $ do
-  bds <- NameSpaceT $ do
+  (u, bds) <- NameSpaceT $ do
     ns <- asks nspace >>= liftIO . readMVar
     u <- asks hown
     let fu = findunion (phCanon ph) ns
         phs = case fu of
           [] -> [ph]
           _  -> map dirph fu
-    ss <- forM phs $ \p -> liftIO $ (do
+    return (u, phs)
+  ss <- forM bds $ \p -> (NameSpaceT $ liftIO $ do
       let pda = phAttach p
       h <- devOpen pda c_OREAD
       fns <- hGetContents h >>= return . wordsBy (== '\000')
-      forM fns $ \f -> devWalk pda f >>= devStat) `X.catch` (\(e :: X.SomeException) -> return [])
-    return $ map (mapUser u) $ concat ss
-  loop bds s where
+      forM fns $ \f -> devWalk pda f >>= devStat) `nsCatch` (\_ -> return [])
+  let mss = map (mapUser u) $ concat ss
+  loop mss s where
     loop [] (Continue k) = return (Continue k)
     loop (l:ls) (Continue k) = runIteratee (k (Chunks [l])) >>= loop ls
     loop l z = return z
