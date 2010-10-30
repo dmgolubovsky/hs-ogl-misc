@@ -15,7 +15,9 @@
 
 module System.IO9.NameSpace.Enumerator (
    nsWithText
+  ,nsWithBin
   ,nsEnumText
+  ,nsEnumBin
   ,nsEnumDir
   ,liftIter
   ,dbgChunks
@@ -41,9 +43,29 @@ import Data.Enumerator hiding (map)
 import Data.List.Split
 import qualified Control.Exception as X
 import qualified Control.Monad.CatchIO as C
+import qualified Data.ByteString as B
+import qualified Data.Enumerator.IO as EB
 import qualified Data.Enumerator.Text as ET
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+
+-- | Open an 'Iteratee' on a binary file for the given path handle, use it, and close the handle
+-- afterwards.
+  
+nsWithBin  :: (MonadIO m, C.MonadCatchIO m)
+           => PathHandle                  -- ^ Handle to iterate over
+           -> Word8                       -- ^ Open mode (only c_OTRUNC is meaningful)
+           -> (Iteratee B.ByteString (NameSpaceT m) () -> NameSpaceT m x)
+           -> NameSpaceT m x
+
+nsWithBin  ph om k = do
+  h <- NameSpaceT $ liftIO $ do
+    hh <- devOpen (phAttach ph) (c_OWRITE .|. (om .&. c_OTRUNC))
+    hSetBuffering hh NoBuffering
+    hSetBinaryMode hh True
+    return hh
+  let eit = liftIter $ EB.iterHandle h
+  k eit `nsFinally` (NameSpaceT $ liftIO $ hClose h)
 
 -- | Open a 'T.Text' 'Iteratee' for the given path handle, use it, and close the handle
 -- afterwards.
@@ -72,6 +94,36 @@ liftIter iter = Iteratee $ do
 		Yield x cs -> Yield x cs
 		Error err -> Error err
 		Continue k -> Continue (liftIter . k)
+
+-- | Open a binary 'Enumerator' for the given path handle.
+
+nsEnumBin  :: (MonadIO m, C.MonadCatchIO m)
+           => Integer                     -- ^ Buffer size
+           -> PathHandle                  -- ^ Handle to enumerate
+           -> Enumerator B.ByteString (NameSpaceT m) b
+
+nsEnumBin  n ph s =
+  Iteratee io where
+    withHandle = tryStep (devOpen (phAttach ph) c_OREAD)
+    io = withHandle $ \h -> do
+      NameSpaceT $ liftIO $ do
+        hSetBuffering h NoBuffering
+        hSetBinaryMode h True
+      runIteratee (enh h s) `nsFinally` (NameSpaceT $ liftIO $ hClose h)
+    enh h = Iteratee . loop where
+      loop (Continue k) = withBytes $ \b -> if B.null b
+        then return $ Continue k
+        else runIteratee (k (Chunks [b])) >>= loop
+      loop step = return step
+      withBytes = tryStep $ do
+        hasInput <- X.catch
+          (hWaitForInput h (-1))
+          (\err -> if isEOFError err
+            then return False
+            else X.throwIO err)
+        if hasInput
+          then B.hGetNonBlocking h (fromIntegral n)
+          else return B.empty
 
 -- | Open a 'T.Text' 'Enumerator' for the given path handle.
 

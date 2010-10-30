@@ -81,6 +81,7 @@ main = do
     nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
+    run (nsEnumBin 64 eph $$ dbgChunks True)
     return ()
 
 
