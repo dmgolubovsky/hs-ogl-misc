@@ -16,10 +16,16 @@ import System.IO9.DevLayer
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Control.Exception (throw)
 import Control.Monad.CatchIO hiding (throw)
+import Data.Enumerator.Compose
 import Data.Enumerator hiding (head)
+import Data.Monoid
+import qualified Data.ByteString as B
+import qualified Data.Enumerator as DE
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
 
 rootdir = "/home/dima/ns-root"
 
@@ -81,7 +87,13 @@ main = do
     nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
-    run (nsEnumBin 64 eph $$ dbgChunks True)
+    let body = nestIter E.decodeUtf8Part . nestIter splitNL
+    run (nsEnumBin 6 con $$ body (dbgChunks True))
     return ()
 
+splitNL t = let (p, r) = T.spanBy (/= '\n') t
+                (p', r') = T.spanBy (== '\n') r
+            in  case T.null r of
+                  True ->  (T.empty, p)
+                  False -> (p `T.append` p', r')
 

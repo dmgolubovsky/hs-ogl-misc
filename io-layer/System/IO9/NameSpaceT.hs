@@ -50,6 +50,7 @@ import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Exception
 import System.Posix.User
+import System.Environment
 import qualified Data.Map as M
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
@@ -63,7 +64,7 @@ nsInit :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
 
 nsInit dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
-  hu <- liftIO getLoginName
+  hu <- liftIO (getLoginName `Control.Exception.catch` (\(e::SomeException) -> getEnv "USER"))
   let dvm = M.fromList $ zip (map devchar dts) dts
       env = NsEnv {
         hown = hu

@@ -23,13 +23,15 @@ import System.IO9.DevGen
 import Data.NineP.Bits
 import System.IO
 import Data.NineP
+import Control.Exception
+import System.Environment
 import qualified Data.ByteString.UTF8 as C
 import qualified Data.Map as M
 
 devCons :: IO DevTable
 
 devCons = do
-  ow <- getLoginName
+  ow <- getLoginName `Control.Exception.catch` (\(e::SomeException) -> getEnv "USER")
   let contbl = [
         dirTab 0 0o555 (DirMap $ M.fromList [("cons", 1)
                                             ,("hostowner", 2)
