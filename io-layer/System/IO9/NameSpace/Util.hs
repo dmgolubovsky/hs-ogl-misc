@@ -29,6 +29,8 @@ import Control.Concurrent
 import Data.Tuple.Select
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
+import System.Posix.User
+import System.Environment
 import GHC.IO (catchException)
 import qualified Data.DList as DL
 import qualified Data.Map as M
@@ -248,4 +250,9 @@ mapUser u st =
          ,st_uid = un $ st_uid st
          ,st_muid = un $ st_muid st}
 
+-- | Obtain logged user name from the terminal group info, or, as a fallback,
+-- from the USER environment variable.
 
+logName :: IO String
+
+logName  = getLoginName `Control.Exception.catch` (\(e::SomeException) -> getEnv "USER")
