@@ -22,12 +22,14 @@ module System.IO9.NameSpace.Types (
   ,DevMap (..)
   ,NsEnv (..)
   ,PathHandle (..)
+  ,Argument (..)
 ) where
 
 import System.IO9.DevLayer
 import Control.Concurrent.MVar
 import qualified Data.Map as M
 import qualified Data.DList as DL
+import qualified Data.Text as T
 
 -- Need this to keep compiler happy.
 
@@ -99,5 +101,21 @@ instance Eq PathHandle where
 
 instance Ord PathHandle where
   compare p1 p2 = compare (phCanon p1) (phCanon p2)
+
+-- | Application argument type. An application may expect arguments that are arbitrary strings,
+-- option arguments (only single-character options are available), input and output redirects.
+-- Each redirect is given a name (plays the same role as handle number in POSIX environments)
+-- which is a way an application determines how to direct its outputs and how to collect
+-- its inputs other than standard in and out. If redirect arguments are provided, the parent
+-- process is expected to have evaluated associated paths and provide 'PathHandle' for each
+-- redirect. Output redirect has an additional boolean flag showing whether the output
+-- is desired to be appended to an existing file, or truncate an existing file, but this
+-- is up to the application to honor.
+
+data Argument = TextArg T.Text                   -- ^ Arbitrary text
+              | OptArg Char T.Text               -- ^ Single-character option
+              | RedirIn T.Text PathHandle        -- ^ Input redirect
+              | RedirOut Bool T.Text PathHandle  -- ^ Output redirect
+                deriving (Eq, Show)
 
 

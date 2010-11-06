@@ -35,6 +35,8 @@ module System.IO9.NameSpaceT (
  ,nsEnumDir
  ,nsCatch
  ,nsFinally
+ ,Application (..)
+ ,AppTable (..)
 ) where
 
 import Data.Bits
@@ -55,13 +57,17 @@ import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
 import System.IO9.NameSpace.Util
 import System.IO9.NameSpace.Enumerator
+import qualified Data.Text as T
+import qualified Data.ByteString as B
+import Data.Nesteratee
+
 
 -- | Run the "init" program with the given device list and empty namespace
 -- (it is expected that it builds the namespace from scratch).
 
-nsInit :: (MonadIO m) => [DevTable] -> NameSpaceT m () -> m ()
+nsInit :: (MonadIO m) => AppTable m -> [DevTable] -> NameSpaceT m () -> m ()
 
-nsInit dts nsi = do
+nsInit apps dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
   hu <- liftIO logName
   let dvm = M.fromList $ zip (map devchar dts) dts
@@ -193,4 +199,21 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
                 phCanon = ncn
                ,phAttach = nda}
 
+-- | A general type for an embedded application. A typical application is a
+-- 'Nesteratee' which will be fed from a binary 'Enumerator' (standard input)
+-- and will send its results to a binary 'Iteratee' (standard output). Standard
+-- input and output will be provided by the parent process (or it will be /dev/cons
+-- for the initial process). Other input and output channels are available via
+-- redirect arguments.
+
+type Application m = [Argument]                  -- ^ Application arguments
+                  -> Nesteratee B.ByteString     -- ^ Binary standard output
+                                B.ByteString     -- ^ Binary standard input
+                                (NameSpaceT m)   -- ^ Namespaced IO layer monad
+                                NineError        -- ^ Completion code ('Enoerror' if OK)
+
+
+-- | Table of embedded applications to be provided when initializing the layer.
+
+type AppTable m = M.Map FilePath (Application m)
 

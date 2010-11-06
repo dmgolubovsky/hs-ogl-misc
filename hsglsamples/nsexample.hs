@@ -19,12 +19,11 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Exception (throw)
 import Control.Monad.CatchIO hiding (throw)
-import Data.Enumerator.Compose
+import Data.Nesteratee
 import Data.Enumerator hiding (head)
-import Data.Monoid
 import qualified Data.ByteString as B
-import qualified Data.Enumerator as DE
 import qualified Data.Text as T
+import qualified Data.Map as M
 import qualified Data.Text.Encoding as E
 
 rootdir = "/home/dima/ns-root"
@@ -53,7 +52,7 @@ main = do
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
   cons <- devCons
-  nsInit [dev, cons] $ do
+  nsInit M.empty [dev, cons] $ do
     ([Enoerror, Emount, Einuse] `forM` (\e -> extest e >>= dbgPrint)) `nsCatch` 
       (\e -> dbgPrint ("Not caught: " ++ show e) >> return [()])
     dbgPrint "NameSpace"
@@ -87,7 +86,7 @@ main = do
     nsWithText con 0 $ \c -> do
       run (nsEnumText eph $$ c) >>= dbgPrint . show
       run (nsEnumText hst $$ c) >>= dbgPrint . show
-    let body = nestIter E.decodeUtf8Part . nestIter splitNL
+    let body = nestState E.decodeUtf8Part . nestState splitNL
     run (nsEnumBin 6 con $$ body (dbgChunks True))
     return ()
 

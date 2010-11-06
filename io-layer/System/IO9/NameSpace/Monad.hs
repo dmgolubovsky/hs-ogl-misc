@@ -73,3 +73,4 @@ m `nsFinally` h = NameSpaceT $ do
   let rx x = runNameSpaceT x `runReaderT` env
   lift (rx m `C.finally` rx h)
 
+

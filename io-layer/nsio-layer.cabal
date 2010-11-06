@@ -5,12 +5,15 @@ maintainer:     golubovsky@gmail.com
 synopsis:       IO Layer library with custom implementations of Handles, namespaces, etc.
 category:       graphics, user interface
 description:
-    This package implements an I/O layer base on new features of GHC runtime:
+    This package implements an I/O layer based on new features of GHC runtime:
     .
     New GHC runtime provides API to implement I/O Handles backed by arbitrary
     instances of GHC.IO.Device and GHC.IO.BufferedIO classes. This package
     provides such implementation of Handles backed by continuation-based
     stream processor functions.
+    .
+    The layer provides Plan9-style per-process namespaces, and also Iteratee-based
+    access to the system resources represented as filesystems.
 build-type:     Simple
 build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.1,
                 containers >= 0.3, directory >= 1.0.1, NineP >= 0.0.2, unix >= 2.4,
@@ -22,10 +25,10 @@ extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 
 exposed-modules:
     Data.NineP.Bits, Data.NineP.Posix, 
-    Data.Enumerator.Compose,
+    Data.Nesteratee,
     GHC.IO.CSPHandle, 
     System.IO9.Error, System.IO9.DirStream, System.IO9.MemoryStream,
-    System.IO9.DevLayer, System.IO9.NameSpaceT,
+    System.IO9.DevLayer, System.IO9.NameSpaceT, System.IO9.Application,
     System.IO9.DevGen, System.IO9.HostAccess,
     System.IO9.DevCons
     

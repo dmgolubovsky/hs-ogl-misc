@@ -1,6 +1,6 @@
 ------------------------------------------------------------------
 -- |
--- Module      :  Data.Enumerator.Compose
+-- Module      :  Data.Nesteratee
 -- Copyright   :  (c) Dmitry Golubovsky, 2010
 -- License     :  BSD-style
 -- 
@@ -10,11 +10,12 @@
 -- 
 --
 --
--- Compositon of Iteratees not directly related to NameSpaceT
+-- Nesting Compositon of Iteratees
 ------------------------------------------------------------------
 
-module Data.Enumerator.Compose (
-  nestIter
+module Data.Nesteratee (
+  Nesteratee (..)
+ ,nestState
 ) where
 
 import Data.Monoid
@@ -22,6 +23,16 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Data.Enumerator
 import qualified Data.Enumerator as DE (head)
+
+-- | A general type of an 'Iteratee' nesting another 'Iteratee', or 'Nesteratee'.
+-- This is basically a special case of 'Enumeratee', but composable in a different way.
+-- Most of 'Iteratee's defined in this module belong to this pattern. A 'Nesteratee'
+-- is usually augmented with some function that does some transformation over the chunks
+-- which are received by the nesting (outer) 'Iteratee' and fed to the nested (inner)
+-- 'Iteratee'. With the 'Nesteratee' pattern the focus is made on the return type
+-- of the deepest 'Iteratee', and its unprocessed input is simply discarded in the end.
+
+type Nesteratee i o m b = Iteratee i m b -> Iteratee o m b
 
 -- | Create a stateful 'Iteratee' which keeps its state between input chunks,
 -- processes input chunks by the function provided, and feeds the inner 'Iteratee'.
@@ -37,24 +48,22 @@ import qualified Data.Enumerator as DE (head)
 -- 'Iteratee' chunk type. Iteratees following this pattern can be composed by simple
 -- '.' composition:
 -- >
--- >  nestIter f1 . nestIter f2
+-- >  nestState f1 . nestState f2
 -- >
 -- where @f1@ may convert from 'ByteString' to 'Text', and @f2@ breaks the 'Text'
 -- into newline-separated pieces.
 
-nestIter :: (Eq inner, Monoid inner, Monoid outer, Monad m)
-         => (outer -> (inner, outer))            -- ^ The chunk processing function 
-         -> Iteratee inner m b                   -- ^ The "inner" 'Iteratee'
-         -> Iteratee outer m b                   -- ^ The "outer" 'Iteratee'
+nestState :: (Eq i, Monoid i, Monoid o, Monad m)
+          => (o -> (i, o))                       -- ^ The chunk processing function 
+          -> Nesteratee i o m b                  -- ^ The resulting 'Nesteratee'
 
-
-nestIter f iter = loop False mempty iter where
+nestState f iter = loop False mempty iter where
   loop eof s i = do
     ix <- lift (runIteratee i)
     case ix of
       Error e -> throwError e
       Yield b _ -> Iteratee $ return $ Yield b $ Chunks [s]
-      Continue k | eof -> error "nestIter: divergent iteratee"
+      Continue k | eof -> error "nestState: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
     mbchk <- DE.head
