@@ -1,0 +1,17 @@
+name:           ns-base
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       Base applications for the NameSpaced IO Layer.
+category:       Console
+
+description:
+    Base embedded applications for the NameSpaced IO Layer.
+
+build-type:     Simple
+
+build-depends:  base >= 4.0 && < 5.0, nsio-layer >= 0.1, containers >= 0.3
+
+executable:     ns-base
+main-is:        ns-base.hs
+

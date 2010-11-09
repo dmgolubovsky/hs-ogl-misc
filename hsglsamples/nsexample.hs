@@ -11,7 +11,6 @@ import System.FilePath
 import System.Environment
 import System.IO9.Error
 import System.IO9.DevGen
-import System.IO9.DevCons
 import System.IO9.DevLayer
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
@@ -51,8 +50,7 @@ main = do
   args <- getArgs
   let dir = head (args ++ ["/"])
   dev <- devHost [(rootdir, "/")]
-  cons <- devCons
-  nsInit M.empty [dev, cons] $ do
+  nsInit M.empty [dev] $ do
     ([Enoerror, Emount, Einuse] `forM` (\e -> extest e >>= dbgPrint)) `nsCatch` 
       (\e -> dbgPrint ("Not caught: " ++ show e) >> return [()])
     dbgPrint "NameSpace"

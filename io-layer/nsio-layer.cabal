@@ -29,10 +29,11 @@ exposed-modules:
     GHC.IO.CSPHandle, 
     System.IO9.Error, System.IO9.DirStream, System.IO9.MemoryStream,
     System.IO9.DevLayer, System.IO9.NameSpaceT, System.IO9.Application,
-    System.IO9.DevGen, System.IO9.HostAccess,
-    System.IO9.DevCons
-    
+    System.IO9.DevGen, System.IO9.HostAccess    
 
 other-modules:
     System.IO9.NameSpace.Monad, System.IO9.NameSpace.Types, System.IO9.NameSpace.Util,
-    System.IO9.NameSpace.Enumerator
+    System.IO9.NameSpace.Enumerator,
+    System.IO9.DevCons,
+    System.IO9.DevApps
+
