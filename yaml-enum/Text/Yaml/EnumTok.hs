@@ -22,6 +22,12 @@
 -- and a continuation that receives the next portion of input.
 
 module Text.Yaml.EnumTok (
+  Code (..)
+ ,Token (..)
+ ,Reply (..)
+ ,Result (..)
+ ,State (..)
+ ,stepTok
 ) where
 
 import Prelude hiding ((/), (*), (+), (-), (^))
@@ -799,6 +805,54 @@ asInteger = Parser $ \ state -> returnReply state $ ord (state|>sLast) .- 48
 -- wrapped in a 'Parser'.
 result :: result -> Parser result
 result = return
+
+-- | @errorTokens tokens state message withFollowing@ appends an @Error@ token
+-- with the specified /message/ at the end of /tokens/, and if /withFollowing/
+-- also appends the unparsed text following the error as a final @Unparsed@
+-- token.
+errorTokens tokens state message withFollowing =
+    let tokens' = D.append tokens $ D.singleton Token { tCharOffset = state|>sCharOffset,
+                                                        tLine       = state|>sLine,
+                                                        tLineChar   = state|>sLineChar,
+                                                        tCode       = Error,
+                                                        tText       = message }
+    in if withFollowing && state|>sInput /= []
+       then D.append tokens' $ D.singleton Token { tCharOffset = state|>sCharOffset,
+                                                   tLine       = state|>sLine,
+                                                   tLineChar   = state|>sLineChar,
+                                                   tCode       = Unparsed,
+                                                   tText       = state|>sInput }
+       else tokens'
+
+-- | @commitBugs reply@ inserts an error token if a commit was made outside a
+-- named choice. This should never happen outside tests.
+commitBugs :: Reply result -> D.DList Token
+commitBugs reply =
+  let tokens = reply|>rTokens
+      state = reply|>rState
+  in case reply|>rCommit of
+          Nothing     -> tokens
+          Just commit -> D.append tokens $ D.singleton Token { tCharOffset = state|>sCharOffset,
+                                                               tLine       = state|>sLine,
+                                                               tLineChar   = state|>sLineChar,
+                                                               tCode       = Error,
+                                                               tText       = "Commit to '" ++ commit ++ "' was made outside it" }
+
+-- | @stepTok@ performs a single step of tokenizing a portion of input stream
+-- currently available, returning a 'Reply'
+
+
+stepTok :: (Parser a, State) -> (D.DList Token, Maybe (Parser a), State)
+
+stepTok (Parser p, s) = 
+  let reply = p s
+      tokens = commitBugs reply
+      state' = reply |> rState
+  in  case reply |> rResult of
+        Failed message -> (errorTokens tokens state' message True, Nothing, state')
+        Result _ -> (tokens, Nothing, state')
+        More p' -> (tokens, Just p', state')
+        
 
 #include "Reference.bnf"
 
