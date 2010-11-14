@@ -16,6 +16,7 @@
 module Data.Nesteratee (
   Nesteratee (..)
  ,nestState
+ ,nestStateL
 ) where
 
 import Data.Monoid
@@ -74,5 +75,31 @@ nestState f iter = loop False mempty iter where
         if t == mempty
           then loop2 s' k
           else loop False s' (k $ Chunks [t])
+
+-- | Similar to 'nestState', but the inner 'Iteratee' chunk type does not need to
+-- be a 'Monoid'. The function provided is expected to return a non-empty list
+-- of chunks to be passed to the inner 'Iteratee' while empty list will not be passed.
+
+nestStateL :: (Monoid o, Monad m)
+           => (o -> ([i], o))
+           -> Nesteratee i o m b
+
+nestStateL f iter = loop False mempty iter where
+  loop eof s i = do
+    ix <- lift (runIteratee i)
+    case ix of
+      Error e -> throwError e
+      Yield b _ -> Iteratee $ return $ Yield b $ Chunks [s]
+      Continue k | eof -> error "nestState: divergent iteratee"
+      Continue k -> loop2 s k
+  loop2 s k = do
+    mbchk <- DE.head
+    case mbchk of
+      Nothing -> loop True s (k EOF)
+      Just chk -> do
+        let (t, s') = f (s `mappend` chk)
+        if null t
+          then loop2 s' k
+          else loop False s' (k $ Chunks t)
 
 

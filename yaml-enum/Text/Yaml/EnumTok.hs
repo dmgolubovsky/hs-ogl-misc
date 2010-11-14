@@ -27,7 +27,10 @@ module Text.Yaml.EnumTok (
  ,Reply (..)
  ,Result (..)
  ,State (..)
+ ,Parser (..)
  ,stepTok
+ ,initTok
+ ,loopTok
 ) where
 
 import Prelude hiding ((/), (*), (+), (-), (^))
@@ -77,10 +80,10 @@ record |> field = field record
 -- | @show token@ converts a 'Token' to two YEAST lines: a comment with the
 -- position numbers and the actual token line.
 instance Show Token where
-  show token = ", C: " ++ (show $ token|>tCharOffset)
+  show token =   "C: " ++ (show $ token|>tCharOffset)
             ++ ", L: " ++ (show $ token|>tLine)
-            ++ ", c: " ++ (show $ token|>tLineChar) ++ "\n"
-            ++ (show $ token|>tCode) ++ (escapeString $ token|>tText) ++ "\n"
+            ++ ", c: " ++ (show $ token|>tLineChar) ++ " | "
+            ++ (show $ token|>tCode) ++ ": " ++ (escapeString $ token|>tText) ++ "\n"
 
 -- | @escapeString string@ escapes all the non-ASCII characters in the
 -- /string/, as well as escaping the \"@\\@\" character, using the \"@\\xXX@\",
@@ -148,7 +151,7 @@ instance Show State where
             ++ ", LineChar: "        ++ (show $ state|>sLineChar)
             ++ ", Code: "            ++ (show $ state|>sCode)
             ++ ", Last: "            ++ (show $ state|>sLast)
---          ++ ", Input: >>>"        ++ (show $ state|>sInput) ++ "<<<"
+            ++ ", Input: >>>"        ++ (show $ state|>sInput) ++ "<<<"
 
 -- | @initialState name input@ returns an initial 'State' for parsing the
 -- /input/ (with /name/ for error messages).
@@ -264,13 +267,14 @@ instance Monad Parser where
 
   -- @left >>= right@ applies the /left/ parser, and if it didn't fail
   -- applies the /right/ one (well, the one /right/ returns).
-  left >>= right = bindParser left right
-                   where bindParser (Parser left) right = Parser $ \ state ->
-                           let reply = left state
-                           in case reply|>rResult of
-                                   Failed message -> reply { rResult = Failed message }
-                                   Result value   -> reply { rResult = More $ right value }
-                                   More parser    -> reply { rResult = More $ bindParser parser right }
+  left >>= right = bindParser left right where
+    bindParser (Parser left) right = Parser $ \ state ->
+                       let reply = left state
+                           state' = reply|>rState
+                       in case reply|>rResult of
+                               Failed message -> reply { rResult = Failed message }
+                               Result value   -> reply { rResult = More $ right value }
+                               More parser    -> reply { rResult = More $ bindParser parser right }
 
   -- @fail message@ does just that - fails with a /message/.
   fail message = Parser $ \ state -> failReply state message
@@ -616,6 +620,7 @@ nextIf test = Parser $ \ state ->
                                                     in returnReply state' ()
                            | otherwise -> unexpectedReply state
                []                      -> unexpectedReply state
+
           where charsOf field charsField = if state|>sIsPeek
                                               then -1
                                               else if state|>sChars == []
@@ -839,7 +844,8 @@ commitBugs reply =
                                                                tText       = "Commit to '" ++ commit ++ "' was made outside it" }
 
 -- | @stepTok@ performs a single step of tokenizing a portion of input stream
--- currently available, returning a 'Reply'
+-- currently available, returning a triple of the result, possible continuation
+-- parser, and the state.
 
 
 stepTok :: (Parser a, State) -> (D.DList Token, Maybe (Parser a), State)
@@ -854,5 +860,26 @@ stepTok (Parser p, s) =
         More p' -> (tokens, Just p', state')
         
 
+-- | Produce an initial pair of parser and state to pass to 'stepTok'.
+
+initTok :: String -> (Parser (), State)
+
+initTok input = (p, s) where
+  p = wrap l_yaml_stream
+  s = initialState "<step>" input
+
+-- | Loop the step tokenizer over the given input 'String' (the whole input will
+-- be consumed) and return the list of tokens (including pissoble error tokens).
+
+loopTok :: String -> [Token]
+
+loopTok inp = D.toList $ loop D.empty (initTok inp) where
+  loop atks ps = let (tks, mbp, st) = stepTok ps
+                     tt = D.append atks tks
+                 in  case mbp of
+                       Nothing -> tt
+                       Just p -> loop tt (p, st)
+
 #include "Reference.bnf"
+
 
