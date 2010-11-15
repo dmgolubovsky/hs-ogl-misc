@@ -17,6 +17,7 @@ module Data.Nesteratee (
   Nesteratee (..)
  ,nestState
  ,nestStateL
+ ,nestEOF
 ) where
 
 import Data.Monoid
@@ -54,7 +55,7 @@ type Nesteratee i o m b = Iteratee i m b -> Iteratee o m b
 -- where @f1@ may convert from 'ByteString' to 'Text', and @f2@ breaks the 'Text'
 -- into newline-separated pieces.
 
-nestState :: (Eq i, Monoid i, Monoid o, Monad m)
+nestState :: (Eq i, Eq o, Monoid i, Monoid o, Monad m)
           => (o -> (i, o))                       -- ^ The chunk processing function 
           -> Nesteratee i o m b                  -- ^ The resulting 'Nesteratee'
 
@@ -69,7 +70,12 @@ nestState f iter = loop False mempty iter where
   loop2 s k = do
     mbchk <- DE.head
     case mbchk of
-      Nothing -> loop True s (k EOF)
+      Nothing | s == mempty -> loop True s (k EOF)
+      Nothing -> do
+        let (t, s') = f s
+        if t == mempty
+          then loop True s' (k EOF)
+          else loop False s' (k $ Chunks [t])
       Just chk -> do
         let (t, s') = f (s `mappend` chk)
         if t == mempty
@@ -80,7 +86,7 @@ nestState f iter = loop False mempty iter where
 -- be a 'Monoid'. The function provided is expected to return a non-empty list
 -- of chunks to be passed to the inner 'Iteratee' while empty list will not be passed.
 
-nestStateL :: (Monoid o, Monad m)
+nestStateL :: (Eq o, Monoid o, Monad m)
            => (o -> ([i], o))
            -> Nesteratee i o m b
 
@@ -90,16 +96,40 @@ nestStateL f iter = loop False mempty iter where
     case ix of
       Error e -> throwError e
       Yield b _ -> Iteratee $ return $ Yield b $ Chunks [s]
-      Continue k | eof -> error "nestState: divergent iteratee"
+      Continue k | eof -> error "nestStateL: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
     mbchk <- DE.head
     case mbchk of
-      Nothing -> loop True s (k EOF)
+      Nothing | s == mempty -> loop True s (k EOF)
+      Nothing -> do
+        let (t, s') = f s
+        if null t
+          then loop True s' (k EOF)
+          else loop False s' (k $ Chunks t)
       Just chk -> do
         let (t, s') = f (s `mappend` chk)
         if null t
           then loop2 s' k
           else loop False s' (k $ Chunks t)
 
+-- A 'Nesteratee' which feeds anything it receives from its standard input to the
+-- nested 'Iteratee' and also the chunk provided as an argument if 'EOF' is
+-- detected on the input stream.
 
+nestEOF :: (Monad m) => [i] -> Nesteratee i i m b
+
+nestEOF t iter = loop False False iter where
+  loop eof e i = do
+    ix <- lift (runIteratee i)
+    case ix of
+      Error e -> throwError e
+      Yield b r -> Iteratee $ return $ Yield b r
+      Continue k | eof -> error "nestEOF: divergent iteratee"
+      Continue k -> do
+        mbchk <- DE.head
+        case mbchk of
+          Just chk -> loop False False (k $ Chunks [chk])
+          Nothing | e -> loop True True (k EOF)
+          Nothing -> loop False True (k $ Chunks t)
+ 

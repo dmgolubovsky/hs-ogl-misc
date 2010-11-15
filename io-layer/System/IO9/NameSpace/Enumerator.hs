@@ -20,11 +20,14 @@ module System.IO9.NameSpace.Enumerator (
   ,nsEnumBin
   ,nsEnumDir
   ,liftIter
+  ,nestText
+  ,nestLines
   ,dbgChunks
 ) where
 
 import Data.Word
 import Data.Bits
+import Data.Char
 import System.IO
 import Data.NineP
 import Data.NineP.Bits
@@ -40,6 +43,7 @@ import System.IO9.NameSpace.Util
 import System.IO9.NameSpace.Types
 import System.IO9.DevLayer
 import Data.Enumerator hiding (map)
+import Data.Nesteratee
 import Data.List.Split
 import qualified Control.Exception as X
 import qualified Control.Monad.CatchIO as C
@@ -48,6 +52,7 @@ import qualified Data.Enumerator.IO as EB
 import qualified Data.Enumerator.Text as ET
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Encoding as E
 
 -- | Open an 'Iteratee' on a binary file for the given path handle, use it, and close the handle
 -- afterwards.
@@ -193,4 +198,28 @@ nsEnumDir ph s = Iteratee $ do
 dbgChunks :: (MonadIO m, Show a) => Bool -> Iteratee a (NameSpaceT m) ()
 
 dbgChunks = liftIter . printChunks
+
+-- | A 'Nesteratee' reading 'ByteString' chunks from its input stream and feeding
+-- the nested 'Iteratee' with chunks of 'T.Text'. Invalid octets result in the 0xFFFD
+-- character. This happens when undecoded remainder is longer than 5 octets.
+
+nestText :: (Monad m) => Nesteratee T.Text B.ByteString m b
+
+nestText = nestState $ \i -> let (t, b) = E.decodeUtf8Part i
+                             in  if B.length b > 5 then (T.singleton (chr 0xFFFD), B.tail b)
+                                                   else (t, b)
+
+-- A 'Nesteratee' reading 'Text' chunks from its input stream and feeding the nested
+-- 'Nesteratee' with lines of text (that is, delimited with a newline character).
+
+nestLines :: (Monad m) => Nesteratee T.Text T.Text m b
+
+nestLines = nestEOF [T.singleton '\n'] . nestState splitNL
+
+splitNL t = let (p, r) = T.spanBy (/= '\n') t
+                (p', r') = T.spanBy (== '\n') r
+            in  case T.null r of
+                  True ->  (T.empty, p)
+                  False -> (p `T.append` p', r')
+
 
