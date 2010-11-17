@@ -37,6 +37,11 @@ module System.IO9.NameSpaceT (
  ,nsFinally
  ,Application (..)
  ,AppTable (..)
+ ,appTable
+ ,appEntry
+ ,nestText
+ ,nestLines
+ ,nestBin
 ) where
 
 import Data.Bits
@@ -73,7 +78,8 @@ nsInit apps dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
   hu <- liftIO logName
   cons <- liftIO devCons
-  let bids = [cons]
+  apps <- liftIO $ devApps apps
+  let bids = [cons, apps]
       dts' = dts ++ bids
   let dvm = M.fromList $ zip (map devchar dts') dts'
       env = NsEnv {
@@ -204,4 +210,17 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
                 phCanon = ncn
                ,phAttach = nda}
 
+-- | A smart constructor for an 'AppTable' making it not necessary to explicitly
+-- import "Data.Map". Each application module is expected to provide its own 'AppTable'
 
+appTable :: Monad m => [AppTable m] -> AppTable m
+
+appTable = M.unions
+
+-- | A smart constructor for an individual application exporting one or more entry point.
+-- It expects a list of tuples where first elements are application names, and second
+-- elements are entry points.
+
+appEntry :: (Monad m) => [(FilePath, Application m)] -> AppTable m
+
+appEntry = M.fromList

@@ -22,6 +22,7 @@ module System.IO9.NameSpace.Enumerator (
   ,liftIter
   ,nestText
   ,nestLines
+  ,nestBin
   ,dbgChunks
 ) where
 
@@ -200,7 +201,7 @@ dbgChunks :: (MonadIO m, Show a) => Bool -> Iteratee a (NameSpaceT m) ()
 dbgChunks = liftIter . printChunks
 
 -- | A 'Nesteratee' reading 'ByteString' chunks from its input stream and feeding
--- the nested 'Iteratee' with chunks of 'T.Text'. Invalid octets result in the 0xFFFD
+-- the inner 'Iteratee' with chunks of 'T.Text'. Invalid octets result in the 0xFFFD
 -- character. This happens when undecoded remainder is longer than 5 octets.
 
 nestText :: (Monad m) => Nesteratee T.Text B.ByteString m b
@@ -209,8 +210,8 @@ nestText = nestState $ \i -> let (t, b) = E.decodeUtf8Part i
                              in  if B.length b > 5 then (T.singleton (chr 0xFFFD), B.tail b)
                                                    else (t, b)
 
--- A 'Nesteratee' reading 'Text' chunks from its input stream and feeding the nested
--- 'Nesteratee' with lines of text (that is, delimited with a newline character).
+-- A 'Nesteratee' reading 'Text' chunks from its input stream and feeding the inner
+-- 'Iteratee' with lines of text (that is, delimited with a newline character).
 
 nestLines :: (Monad m) => Nesteratee T.Text T.Text m b
 
@@ -222,4 +223,10 @@ splitNL t = let (p, r) = T.spanBy (/= '\n') t
                   True ->  (T.empty, p)
                   False -> (p `T.append` p', r')
 
+-- | A 'Nesteratee' reading 'T.Text' chunks from its input and feeding the inner 'Iteratee'
+-- with 'ByteString' chunks encodede to UTF-8.
+
+nestBin :: (Monad m) => Nesteratee B.ByteString T.Text m b
+
+nestBin = nestState $ \i -> (E.encodeUtf8 i, T.empty)
 

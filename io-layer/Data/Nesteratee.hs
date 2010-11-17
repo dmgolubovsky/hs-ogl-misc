@@ -18,11 +18,18 @@ module Data.Nesteratee (
  ,nestState
  ,nestStateL
  ,nestEOF
+ ,nestYield
+ ,Nested (..)
+ ,nestApp
+ ,upStream
+ ,downStream
 ) where
 
 import Data.Monoid
 import Control.Monad
 import Control.Monad.Trans.Class
+import Control.Monad.Trans.Abort
+import Control.Monad.Trans.State.Strict
 import Data.Enumerator
 import qualified Data.Enumerator as DE (head)
 
@@ -113,7 +120,7 @@ nestStateL f iter = loop False mempty iter where
           then loop2 s' k
           else loop False s' (k $ Chunks t)
 
--- A 'Nesteratee' which feeds anything it receives from its standard input to the
+-- | A 'Nesteratee' which feeds anything it receives from its standard input to the
 -- nested 'Iteratee' and also the chunk provided as an argument if 'EOF' is
 -- detected on the input stream.
 
@@ -132,4 +139,71 @@ nestEOF t iter = loop False False iter where
           Just chk -> loop False False (k $ Chunks [chk])
           Nothing | e -> loop True True (k EOF)
           Nothing -> loop False True (k $ Chunks t)
+
+-- | Feed the inner 'Iteratee' with whatever is received, but once it 'Yield's a value,
+-- replace it with the value provided as the first argument.
  
+nestYield :: (Monad m) => r -> Iteratee i m b -> Iteratee i m r
+
+nestYield r iter = loop False iter where
+  loop eof i = do
+    ix <- lift (runIteratee i)
+    case ix of
+      Error e -> throwError e
+      Yield _ x -> Iteratee $ return $ Yield r x
+      Continue k | eof -> error "nestYield: divergent iteratee"
+      Continue k -> do
+        mbchk <- DE.head
+        case mbchk of
+          Just chk -> loop False (k $ Chunks [chk])
+          Nothing -> loop True (k EOF)
+
+-- | A type alias for a nested application body function.
+
+type Nested i o m b a = StateT (Iteratee i m b) (AbortT b (Iteratee o m)) a
+
+-- | A 'Nesteratee' which is basically an application program, running in a 
+-- state monad transformer where the inner 'Iteratee' is the state. After the body
+-- of the nested program finishes, the inner 'Iteratee' is sent 'EOF'. If however
+-- the inner 'Iteratee' yields a value prematurely, the nested application program
+-- will be aborted.
+
+
+nestApp :: (Monad m)
+        => Nested i o m b b
+        -> Nesteratee i o m b
+  
+nestApp body iter = do
+  ew <- unwrapAbortT (runStateT body iter)
+  case ew of
+    Left b -> Iteratee $ return $ Yield b EOF
+    Right (a, i) -> loop False i where
+      loop eof i = do
+        ix <- lift (runIteratee i)
+        case ix of
+          Error e -> throwError e
+          Yield b r -> Iteratee $ return $ Yield a EOF
+          Continue k | eof -> error "nestApp: divergent iteratee"
+          Continue k -> loop True (k EOF)
+
+-- | Receive a chunk of 'Stream' from the application's upstream. This function calls
+-- 'DE.head'
+
+upStream :: (Monad m) => Nested i o m b (Maybe o)
+
+upStream = lift $ lift $ DE.head
+
+-- | Send a chunk (only one at a time) to the inner 'Iteratee'. If the inner 'Iteratee'
+-- is not ready, abort the application body with the given value (of the same type as 
+-- the outer 'Iteratee' would yield when finished).
+
+downStream :: (Monad m) => b -> i -> Nested i o m b () 
+
+downStream abval dstr = do
+  iter <- get
+  ix <- lift $ lift $ lift $ runIteratee iter
+  case ix of
+    Error e -> lift $ lift $ throwError e
+    Yield b _ -> lift (abort abval)
+    Continue k -> put (k $ Chunks [dstr])
+

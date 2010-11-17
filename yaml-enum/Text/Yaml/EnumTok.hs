@@ -845,8 +845,8 @@ commitBugs reply =
 
 -- | @stepTok@ performs a single step of tokenizing a portion of input stream
 -- currently available, returning a triple of the result, possible continuation
--- parser, and the state.
-
+-- parser, and the state. NB: this is not yet a truly step-by-step tokenizer;
+-- feed a whole Yaml document to it.
 
 stepTok :: (Parser a, State) -> (D.DList Token, Maybe (Parser a), State)
 
