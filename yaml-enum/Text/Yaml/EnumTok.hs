@@ -869,7 +869,7 @@ initTok input = (p, s) where
   s = initialState "<step>" input
 
 -- | Loop the step tokenizer over the given input 'String' (the whole input will
--- be consumed) and return the list of tokens (including pissoble error tokens).
+-- be consumed) and return the list of tokens (including possible error tokens).
 
 loopTok :: String -> [Token]
 

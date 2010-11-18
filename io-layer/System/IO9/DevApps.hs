@@ -71,15 +71,14 @@ devApps at = do
   ow <- logName
   let names = M.keys at
       napps = length names
-      qps = take napps [2 .. ]
+      qps = take napps [1 .. ]
       oneapp fp q = dirTab q 0o555 (BinConst $ C.fromString $ yaml fp)
       yaml fp = unlines [
         "---"
        ,"builtin: " ++ fp
        ,"..."]
-      apptbl = [
-        dirTab 0 0o555 (DirMap $ M.fromList [("bin", 1)])
-       ,dirTab 1 0o555 (DirMap M.empty)] ++ zipWith oneapp names qps
+      apptbl = [dirTab 0 0o555 (DirMap $ M.fromList $ zip names qps)] ++ 
+                 zipWith oneapp names (map fromIntegral qps)
   mtop <- genTopDir [("/", apptbl)]
   gentbl <- devGen mtop 'α'
   return gentbl {devname = "apps"}

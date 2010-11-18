@@ -11,7 +11,8 @@ description:
 build-type:     Simple
 
 build-depends:  base >= 4.0 && < 5.0, nsio-layer >= 0.1, containers >= 0.3, 
-                yaml-enumtok >= 0.1, dlist >= 0.5, filepath >= 1.1, enumerator >= 0.4.2
+                yaml-enumtok >= 0.1, dlist >= 0.5, filepath >= 1.1, enumerator >= 0.4.2,
+                utf8-string >= 0.3.6, bytestring >= 0.9.1.7, text >= 0.10.0.0.1
 
 executable:     ns-base
 main-is:        ns-base.hs

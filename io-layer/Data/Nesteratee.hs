@@ -23,6 +23,8 @@ module Data.Nesteratee (
  ,nestApp
  ,upStream
  ,downStream
+ ,liftMB
+ ,liftMI
 ) where
 
 import Data.Monoid
@@ -71,7 +73,7 @@ nestState f iter = loop False mempty iter where
     ix <- lift (runIteratee i)
     case ix of
       Error e -> throwError e
-      Yield b _ -> Iteratee $ return $ Yield b $ Chunks [s]
+      Yield b _ -> yield b $ Chunks [s]
       Continue k | eof -> error "nestState: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
@@ -102,7 +104,7 @@ nestStateL f iter = loop False mempty iter where
     ix <- lift (runIteratee i)
     case ix of
       Error e -> throwError e
-      Yield b _ -> Iteratee $ return $ Yield b $ Chunks [s]
+      Yield b _ -> yield b $ Chunks [s]
       Continue k | eof -> error "nestStateL: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
@@ -131,7 +133,7 @@ nestEOF t iter = loop False False iter where
     ix <- lift (runIteratee i)
     case ix of
       Error e -> throwError e
-      Yield b r -> Iteratee $ return $ Yield b r
+      Yield b r -> yield b r
       Continue k | eof -> error "nestEOF: divergent iteratee"
       Continue k -> do
         mbchk <- DE.head
@@ -150,7 +152,7 @@ nestYield r iter = loop False iter where
     ix <- lift (runIteratee i)
     case ix of
       Error e -> throwError e
-      Yield _ x -> Iteratee $ return $ Yield r x
+      Yield _ x -> yield r x
       Continue k | eof -> error "nestYield: divergent iteratee"
       Continue k -> do
         mbchk <- DE.head
@@ -166,8 +168,7 @@ type Nested i o m b a = StateT (Iteratee i m b) (AbortT b (Iteratee o m)) a
 -- state monad transformer where the inner 'Iteratee' is the state. After the body
 -- of the nested program finishes, the inner 'Iteratee' is sent 'EOF'. If however
 -- the inner 'Iteratee' yields a value prematurely, the nested application program
--- will be aborted.
-
+-- will be aborted. 
 
 nestApp :: (Monad m)
         => Nested i o m b b
@@ -176,13 +177,13 @@ nestApp :: (Monad m)
 nestApp body iter = do
   ew <- unwrapAbortT (runStateT body iter)
   case ew of
-    Left b -> Iteratee $ return $ Yield b EOF
-    Right (a, i) -> loop False i where
+    Left b -> yield b EOF
+    Right (x, i) -> loop False i where
       loop eof i = do
         ix <- lift (runIteratee i)
         case ix of
           Error e -> throwError e
-          Yield b r -> Iteratee $ return $ Yield a EOF
+          Yield b r -> Iteratee $ return $ Yield (x `seq` b) EOF
           Continue k | eof -> error "nestApp: divergent iteratee"
           Continue k -> loop True (k EOF)
 
@@ -191,7 +192,7 @@ nestApp body iter = do
 
 upStream :: (Monad m) => Nested i o m b (Maybe o)
 
-upStream = lift $ lift $ DE.head
+upStream = liftMI $ DE.head
 
 -- | Send a chunk (only one at a time) to the inner 'Iteratee'. If the inner 'Iteratee'
 -- is not ready, abort the application body with the given value (of the same type as 
@@ -201,9 +202,21 @@ downStream :: (Monad m) => b -> i -> Nested i o m b ()
 
 downStream abval dstr = do
   iter <- get
-  ix <- lift $ lift $ lift $ runIteratee iter
+  ix <- liftMB $ runIteratee iter
   case ix of
-    Error e -> lift $ lift $ throwError e
+    Error e -> liftMI $ throwError e
     Yield b _ -> lift (abort abval)
     Continue k -> put (k $ Chunks [dstr])
+
+-- | Perform an action in the base monad of the 'Nesteratee'.
+
+liftMB :: (Monad m) => m a -> Nested i o m b a
+
+liftMB = lift . lift . lift
+
+-- | Perform an action in the outer 'Iteratee' monad.
+
+liftMI :: (Monad m) => Iteratee o m x -> Nested i o m b x
+
+liftMI = lift . lift
 
