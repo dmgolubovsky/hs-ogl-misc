@@ -19,6 +19,7 @@ module Data.Nesteratee (
  ,nestStateL
  ,nestEOF
  ,nestYield
+ ,iterFinal
  ,Nested (..)
  ,nestApp
  ,upStream
@@ -160,6 +161,13 @@ nestYield r iter = loop False iter where
           Just chk -> loop False (k $ Chunks [chk])
           Nothing -> loop True (k EOF)
 
+-- | Receive any amount of input stream, yield the last chunk (or 'Nothing') on EOF.
+-- This 'Iteratee' extracts the final computation from the chain of 'Nesteratee's.
+
+iterFinal :: (Monad m) => Iteratee a m (Maybe a)
+
+iterFinal = liftFoldL' (\b a -> Just a) Nothing
+
 -- | A type alias for a nested application body function.
 
 type Nested i o m b a = StateT (Iteratee i m b) (AbortT b (Iteratee o m)) a
@@ -171,7 +179,7 @@ type Nested i o m b a = StateT (Iteratee i m b) (AbortT b (Iteratee o m)) a
 -- will be aborted. 
 
 nestApp :: (Monad m)
-        => Nested i o m b b
+        => Nested i o m b ()
         -> Nesteratee i o m b
   
 nestApp body iter = do

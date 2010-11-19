@@ -31,12 +31,11 @@ main = do
     nsBind (BindAfter False) "#α" "/bin"
     ph <- nsEval app
     con <- nsEval "/dev/cons"
-    nsWithBin con 0 $ \c -> do
-      run (nsEnumBin 1024 ph $$ (procYaml $ dbgChunks True))
+    readYaml ph
         >>= dbgPrint . show
 
-procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ()
+procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ([Token])
 
-procYaml = nestText . nestLines . nestYaml ()
+procYaml = nestText . nestYaml []
 
 
