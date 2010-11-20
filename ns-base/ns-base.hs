@@ -11,6 +11,7 @@ import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import System.IO9.Application
 import Text.Yaml.EnumTok
+import Text.Yaml.Loader
 import Data.Enumerator hiding (head)
 import qualified Data.DList as D
 import qualified Data.Map as M
@@ -31,8 +32,10 @@ main = do
     nsBind (BindAfter False) "#α" "/bin"
     ph <- nsEval app
     con <- nsEval "/dev/cons"
-    readYaml ph
-        >>= dbgPrint . show
+    (Right tks) <- readYaml ph
+    dbgPrint $ show tks
+    dbgPrint $ show $ loadYaml tks
+
 
 procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ([Token])
 

@@ -13,7 +13,7 @@
 -- 
 --
 --
--- Enumerator/Iteratee compatible YAML tokenizer.
+-- YAML tokenizer based on the Reference implementation.
 ------------------------------------------------------------------
 
 -- This module heavily borrows from the YamlReference package,

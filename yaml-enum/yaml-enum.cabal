@@ -3,19 +3,21 @@ Version:             0.1
 Cabal-Version:       >= 1.6
 License:             LGPL
 Copyright:           Oren Ben-Kiki 2007, 2008, portions by Dmitry Golubovsky, 2010
-Category:            Enumerator
-Synopsis:            Enumerator-compatible YAML tokenizer
+Category:            Data
+Synopsis:            YAML tokenizer and loader
 Build-type:          Simple
 
-Description:         This package contains an enumerator/iteratee compatible YAML
-                     tokenizer derived from the \"YAML Reference Implementaton\",
-                     see <http://hackage.haskell.org/package/YamlReference>.
+Description:         This package contains an YAML tokenizer derived from 
+                     the \"YAML Reference Implementaton\", see 
+                     <http://hackage.haskell.org/package/YamlReference>, and
+                     a simple Yaml loader.
 
 Extra-source-files:  Text/Yaml/Reference.bnf
 
-Exposed-modules:     Text.Yaml.EnumTok
+Exposed-modules:     Text.Yaml.EnumTok, Text.Yaml.Loader
 
 Other-modules:       Text.Yaml.Types
 
-Build-depends:       base >= 4.0 && < 5.0, containers >= 0.3, dlist >= 0.5
+Build-depends:       base >= 4.0 && < 5.0, containers >= 0.3, dlist >= 0.5,
+                     parsec < 3.0
 
