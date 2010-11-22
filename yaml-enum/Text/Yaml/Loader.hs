@@ -49,7 +49,7 @@ data YamlNode = MkNode {
 -- | Yaml element definition (borrowed from HsSyck).
 
 data YamlElem
-    = EDocument [YamlNode]
+    = EDocument [(String, String)] [YamlNode]
     | EMap [(YamlNode, YamlNode)]
     | ESeq [YamlNode]
     | EStr String
@@ -70,39 +70,74 @@ tokPos t = newPos "" (tLine t) (tLineChar t)
 
 loadYaml :: [Token] -> Either ParseError [YamlElem]
 
-loadYaml = parse (nextdoc >> many ydoc) ""
+loadYaml = parse (bwi >> many ydoc) ""
 
--- Generic token recognizer
+-- Generic token recognizers.
 
-ytoken = token (show . tCode) tokPos
+ytok c = (token (show . tCode) tokPos $ \t -> if tCode t == c then Just (tText t)
+                                                              else Nothing) <?> (show c)
+
+ycod c = (token (show . tCode) tokPos $ \t -> if tCode t == c then Just (tCode t)
+                                                              else Nothing) <?> (show c)
+
 
 -- Parse a whole document.
 
 ydoc :: YP YamlElem
 
 ydoc = do
-  begindoc
-  manyTill anyToken enddoc
-  nextdoc
-  return $ EDocument [MkNode ENil Nothing ASingleton]
+  ytok BeginDocument
+  dirs <- many ydir
+  option "" (ytok DirectivesEnd)
+  ns <- manyTill ynode (ytok EndDocument)
+  return $ EDocument dirs ns
 
--- Individual token recognizers.
+ydir = do
+  ytok BeginDirective
+  ytok Indicator
+  s1 <- ytok Meta
+  skipMany (ytok White)
+  s2 <- ytok Meta
+  ytok EndDirective
+  bwi
+  return (s1, s2)
 
-begindoc = ytoken $ \t -> case tCode t of
-  BeginDocument -> Just ()
-  _ -> Nothing
+ynode = do
+  ytok BeginNode
+  bwi
+  c <- (ycod BeginScalar <|> ycod BeginMapping <|> ycod BeginSequence)
+  r <- case c of
+    BeginMapping -> do
+      pairs <- many ypair
+      ytok EndMapping
+      return $ MkNode (EMap pairs) Nothing ASingleton
+    BeginScalar -> yscalar
+    _ -> return $ MkNode ENil Nothing ASingleton
+  ytok EndNode
+  return r
 
-enddoc = ytoken $ \t -> case tCode t of
-  EndDocument -> Just ()
-  _ -> Nothing
+yscalar = do
+  i <- option "|" (try $ ytok Indicator)
+  t <- many (ytok Text 
+         <|> ytok LineFold 
+         <|> ytok LineFeed
+         <|> ytok Indent
+         <|> ytok White
+         <|> ytok Break) >>= return . concat
+  ytok EndScalar
+  return $ MkNode (EStr t) Nothing ASingleton
 
-nextdoc = skipAhead begindoc
+ypair = do
+  ytok BeginPair
+  l <- ynode
+  bwi
+  ytok Indicator
+  bwi
+  r <- ynode
+  skipMany (ytok Break)
+  ytok EndPair
+  return (l, r)
 
--- | Skip until the given parser succeeds, but only look that parser ahead.
+bwi = skipMany (try (ytok Break) <|> (ytok Indent) <|> try (ytok White))
 
-skipAhead p = do
-  z <- option 0 ((eof >> return 1) <|> (lookAhead p >> return 1))
-  case z of
-    0 -> anyToken >> nextdoc
-    1 -> return ()
 
