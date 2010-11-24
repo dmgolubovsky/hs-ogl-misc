@@ -117,14 +117,34 @@ ynode = do
   c <- (ycod BeginScalar <|> ycod BeginMapping <|> ycod BeginSequence <|> ycod BeginAlias)
   r <- case c of
     BeginMapping -> do
+      bwi
       pairs <- many ypair
       ytok EndMapping
       return $ MkNode (EMap pairs) tag anchor
     BeginScalar -> yscalar tag anchor
     BeginAlias -> yalias
+    BeginSequence -> yseq tag anchor
     _ -> return $ MkNode ENil tag anchor
   ytok EndNode
   return r
+
+yseq tag anchor = do
+  bwi
+  br <- option (Indicator, "") (yctx Indicator "[")
+  els <- case (snd br) of
+    "[" -> do
+      ss <- sepBy ynode (bwi >> yctx Indicator "," >> bwi)
+      yctx Indicator "]"
+      return ss
+    "" -> many $ do
+      bwi
+      yctx Indicator "-"
+      bwi
+      s <- ynode
+      bwi
+      return s
+  ytok EndSequence
+  return $ MkNode (ESeq els) tag anchor
 
 yprops = between (ytok BeginProperties) (ytok EndProperties) $ permute $
   ((,) <$?> (ASingleton, yanchor) <|?> (Nothing, ytag))
