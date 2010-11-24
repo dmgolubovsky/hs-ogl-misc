@@ -68,10 +68,12 @@ tokPos :: Token -> SourcePos
 tokPos t = newPos "" (tLine t) (tLineChar t)
 
 -- | Parse the whole Yaml token list yielding one or more documents.
+-- BUGS! BUGS! BUGS! Indents and breaks/folds are poorly handled, 
+-- perhaps not at all...
 
 loadYaml :: [Token] -> Either ParseError [YamlElem]
 
-loadYaml = parse (bwi >> many ydoc) ""
+loadYaml = parse (bwi >> many ydoc) "" . ycomment
 
 -- Generic token recognizers.
 
@@ -85,6 +87,16 @@ yctx c x = (token (show . tCode) tokPos $ \t -> if tCode t == c  && tText t == x
                                                   then Just (tCode t, tText t)
                                                   else Nothing) <?> (show c ++ " " ++ x)
 
+-- Strip comments.
+
+ycomment :: [Token] -> [Token]
+
+ycomment [] = []
+ycomment (t:ts) | tCode t == BeginComment = yinc ts where
+  yinc [] = []
+  yinc (t:ts) | tCode t == EndComment = ycomment ts
+  yinc (t:ts) = yinc ts
+ycomment (t:ts) = t : (ycomment ts)
 
 -- Parse a whole document.
 
@@ -118,8 +130,14 @@ ynode = do
   r <- case c of
     BeginMapping -> do
       bwi
+      option (Indicator, "") (yctx Indicator "{")
+      bwi
       pairs <- many ypair
+      bwi
+      option (Indicator, "") (yctx Indicator "}")
+      bwi
       ytok EndMapping
+      bwi
       return $ MkNode (EMap pairs) tag anchor
     BeginScalar -> yscalar tag anchor
     BeginAlias -> yalias
@@ -167,34 +185,49 @@ yalias = do
 
 ytag = do
   ytok BeginTag
-  ytok BeginHandle
-  many (yctx Indicator "!")
-  ytok EndHandle
-  m <- ytok Meta
+  bi <- (yctx BeginHandle "" <|> yctx Indicator "!")
+  m <- case fst bi of
+    BeginHandle -> do
+      many (yctx Indicator "!")
+      ytok EndHandle
+      ytok Meta
+    Indicator -> do
+      yctx Indicator "<"
+      m <- ytok Meta
+      yctx Indicator ">"
+      return m
   ytok EndTag
   bwi
   return $ Just m
 
 yscalar tag anchor = do
-  i <- option "|" (try $ ytok Indicator)
-  t <- many (ytok Text 
+  ifl <- option "|" (ytok Indicator)   -- indent/flow: | or >
+  skc <- option "" (ytok Indicator)    -- chomp/keep/clip: - or + or blank
+  t <- many ((yctx Indicator "\"" >> return "")
+         <|> (yctx Indicator "\'" >> return "")
+         <|> ytok Text 
          <|> ytok LineFold 
          <|> ytok LineFeed
          <|> ytok Indent
          <|> ytok White
          <|> ytok Break) >>= return . concat
   ytok EndScalar
+  bwi
   return $ MkNode (EStr t) tag anchor
 
 ypair = do
+  bwi
   ytok BeginPair
   l <- ynode
   bwi
-  ytok Indicator
+  option "" (ytok Indicator)
   bwi
   r <- ynode
-  skipMany (ytok Break)
+  bwi
   ytok EndPair
+  bwi
+  option (Indicator, "") (yctx Indicator ",")
+  bwi
   return (l, r)
 
 bwi = skipMany (try (ytok Break) <|> (ytok Indent) <|> try (ytok White))
