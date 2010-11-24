@@ -25,6 +25,7 @@ import Text.Yaml.Types
 import Text.Yaml.EnumTok
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Pos
+import Text.ParserCombinators.Parsec.Perm
 
 -- | Yaml tag definition (borrowed from HsSyck).
 
@@ -33,8 +34,8 @@ type YamlTag = Maybe String
 -- | Yaml node anchor definition (borrowed from HsSyck).
 
 data YamlAnchor
-    = AAnchor    !Int
-    | AReference !Int
+    = AAnchor    String
+    | AReference String
     | ASingleton
     deriving (Show, Ord, Eq)
 
@@ -80,6 +81,10 @@ ytok c = (token (show . tCode) tokPos $ \t -> if tCode t == c then Just (tText t
 ycod c = (token (show . tCode) tokPos $ \t -> if tCode t == c then Just (tCode t)
                                                               else Nothing) <?> (show c)
 
+yctx c x = (token (show . tCode) tokPos $ \t -> if tCode t == c  && tText t == x 
+                                                  then Just (tCode t, tText t)
+                                                  else Nothing) <?> (show c ++ " " ++ x)
+
 
 -- Parse a whole document.
 
@@ -90,6 +95,8 @@ ydoc = do
   dirs <- many ydir
   option "" (ytok DirectivesEnd)
   ns <- manyTill ynode (ytok EndDocument)
+  option "" (ytok DocumentEnd)
+  bwi
   return $ EDocument dirs ns
 
 ydir = do
@@ -105,18 +112,50 @@ ydir = do
 ynode = do
   ytok BeginNode
   bwi
-  c <- (ycod BeginScalar <|> ycod BeginMapping <|> ycod BeginSequence)
+  (anchor, tag) <- option (ASingleton, Nothing) yprops
+  bwi
+  c <- (ycod BeginScalar <|> ycod BeginMapping <|> ycod BeginSequence <|> ycod BeginAlias)
   r <- case c of
     BeginMapping -> do
       pairs <- many ypair
       ytok EndMapping
-      return $ MkNode (EMap pairs) Nothing ASingleton
-    BeginScalar -> yscalar
-    _ -> return $ MkNode ENil Nothing ASingleton
+      return $ MkNode (EMap pairs) tag anchor
+    BeginScalar -> yscalar tag anchor
+    BeginAlias -> yalias
+    _ -> return $ MkNode ENil tag anchor
   ytok EndNode
   return r
 
-yscalar = do
+yprops = between (ytok BeginProperties) (ytok EndProperties) $ permute $
+  ((,) <$?> (ASingleton, yanchor) <|?> (Nothing, ytag))
+
+yanchor = do
+  ytok BeginAnchor
+  yctx Indicator "&"
+  m <- ytok Meta
+  ytok EndAnchor
+  bwi
+  return $ AAnchor m
+
+yalias = do
+  yctx Indicator "*"
+  m <- ytok Meta
+  ytok EndAlias
+  bwi
+  return $ MkNode ENil Nothing (AReference m)
+
+
+ytag = do
+  ytok BeginTag
+  ytok BeginHandle
+  many (yctx Indicator "!")
+  ytok EndHandle
+  m <- ytok Meta
+  ytok EndTag
+  bwi
+  return $ Just m
+
+yscalar tag anchor = do
   i <- option "|" (try $ ytok Indicator)
   t <- many (ytok Text 
          <|> ytok LineFold 
@@ -125,7 +164,7 @@ yscalar = do
          <|> ytok White
          <|> ytok Break) >>= return . concat
   ytok EndScalar
-  return $ MkNode (EStr t) Nothing ASingleton
+  return $ MkNode (EStr t) tag anchor
 
 ypair = do
   ytok BeginPair
