@@ -35,6 +35,8 @@ module System.IO9.NameSpaceT (
  ,nsEnumDir
  ,nsCatch
  ,nsFinally
+ ,nsStdIn
+ ,nsStdOut
  ,Application (..)
  ,AppTable (..)
  ,appTable
@@ -49,6 +51,7 @@ import Data.Word
 import Data.NineP
 import Data.NineP.Bits
 import Control.Monad
+import Control.Monad.Trans.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Control.Concurrent
@@ -66,6 +69,7 @@ import System.IO9.DevCons
 import System.IO9.DevApps
 import qualified Data.Text as T
 import qualified Data.ByteString as B
+import qualified Control.Monad.CatchIO as C
 import Data.Nesteratee
 
 
@@ -87,6 +91,8 @@ nsInit apps dts nsi = do
        ,priv = Init
        ,kdtbl = dvm
        ,nspace = mv
+       ,stdinp = "#c/cons"
+       ,stdoutp = "#c/cons"
       }
   runNameSpaceT nsi `runReaderT` env
 
@@ -209,6 +215,21 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
   return PathHandle {
                 phCanon = ncn
                ,phAttach = nda}
+
+-- | Create a 'PathHandle' for the standard input (as set in the Namespace environment)
+
+nsStdIn :: (MonadIO m) 
+        => NameSpaceT m PathHandle
+
+nsStdIn = NameSpaceT (asks stdinp) >>= nsEval
+  
+-- | Create a 'PathHandle' for the standard output (as set in the Namespace environment)
+
+nsStdOut :: (MonadIO m) 
+         => NameSpaceT m PathHandle
+
+nsStdOut = NameSpaceT (asks stdoutp) >>= nsEval
+  
 
 -- | A smart constructor for an 'AppTable' making it not necessary to explicitly
 -- import "Data.Map". Each application module is expected to provide its own 'AppTable'

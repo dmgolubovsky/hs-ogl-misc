@@ -83,6 +83,8 @@ data NsEnv = NsEnv {
   ,priv :: ProcPriv
   ,kdtbl :: DevMap
   ,nspace :: MVar NameSpace
+  ,stdinp :: FilePath
+  ,stdoutp :: FilePath
 }
 
 -- | A semi-opaque data type to represent an evaluated path. Note that path handles
