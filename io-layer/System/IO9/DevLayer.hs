@@ -86,6 +86,7 @@ data ProcPriv = Init                             -- ^ The initial process
               | HostOwner                        -- ^ Host owner (who booted the host) user
               | World String String              -- ^ Any external user woth name and group
               | None                             -- ^ Special privilege level for servers
+                deriving (Show)
 
 -- Show the full device path of the object in the attachment.
 

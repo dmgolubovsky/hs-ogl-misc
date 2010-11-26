@@ -23,6 +23,9 @@ module System.IO9.NameSpace.Types (
   ,NsEnv (..)
   ,PathHandle (..)
   ,Argument (..)
+  ,AppDescr (..)
+  ,AppMode (..)
+  ,AppNsAdjust (..)
 ) where
 
 import System.IO9.DevLayer
@@ -120,4 +123,33 @@ data Argument = TextArg T.Text                   -- ^ Arbitrary text
               | RedirOut Bool T.Text PathHandle  -- ^ Output redirect
                 deriving (Eq, Show)
 
+-- | Application descriptor. This data structure describes how to run an application,
+-- how to adjust its namespace, and how to redirect its I/O. Such descriptor may either
+-- be created off a Yaml file, or built on ad-hoc basis. Specifying 'Nothing' for
+-- fields whose type is 'Maybe' results in inheriting the value from the parent.
 
+data AppDescr = BuildError String                -- ^ Error while building an application
+              | AppDescr {
+                  appBuiltIn :: String           -- ^ Base builtin function
+                 ,appMode :: AppMode             -- ^ Application run mode
+                 ,appNsAdjust :: AppNsAdjust     -- ^ Application namespace adjustment
+                 ,appStdIn :: Maybe PathHandle   -- ^ Inherited or new standard input
+                 ,appStdOut :: Maybe PathHandle  -- ^ Inherited or new standard output
+                 ,appArgs :: [Argument]          -- ^ Preset arguments (incl. redirections)
+                 ,appPriv :: Maybe ProcPriv      -- ^ Privileges requested (subject to validation)
+                }
+              deriving (Show)
+
+-- | Application run mode.
+
+data AppMode = AppCall                           -- ^ Just call the builtin function
+             | AppWait                           -- ^ Fork a thread and wait for its completion
+             | AppNoWait                         -- ^ Fork a thread and run in parallel
+               deriving (Show)
+
+-- | Application namespace adjustment.
+
+data AppNsAdjust = NsShare                       -- ^ Share namespace with parent
+                 | NsClone                       -- ^ Copy parent namespace, not shared
+                 | NsBuild NameSpace             -- ^ Build namespace from scratch
+                   deriving (Show)

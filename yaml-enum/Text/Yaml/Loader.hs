@@ -21,6 +21,8 @@ module Text.Yaml.Loader (
  ,loadYaml
 ) where
 
+import Numeric
+import Data.Char
 import Text.Yaml.Types
 import Text.Yaml.EnumTok
 import Text.ParserCombinators.Parsec
@@ -92,6 +94,7 @@ yctx c x = (token (show . tCode) tokPos $ \t -> if tCode t == c  && tText t == x
 ycomment :: [Token] -> [Token]
 
 ycomment [] = []
+ycomment (t:ts) | tCode t == Bom = ycomment ts
 ycomment (t:ts) | tCode t == BeginComment = yinc ts where
   yinc [] = []
   yinc (t:ts) | tCode t == EndComment = ycomment ts
@@ -210,10 +213,46 @@ yscalar tag anchor = do
          <|> ytok LineFeed
          <|> ytok Indent
          <|> ytok White
+         <|> (try yescape)
          <|> ytok Break) >>= return . concat
   ytok EndScalar
   bwi
   return $ MkNode (EStr t) tag anchor
+
+yescape = do
+  ytok BeginEscape
+  yctx Indicator [chr 0x5c]
+  m <- ytok Meta
+  ytok EndEscape
+  case m of
+             "0" -> return [chr 0]
+             "a" -> return [chr 7]
+             "b" -> return [chr 8]
+             "t" -> return [chr 9]
+             "n" -> return "\n"
+             "v" -> return [chr 0xB]
+             "f" -> return [chr 0xC]
+             "r" -> return [chr 0xD]
+             "e" -> return [chr 0x1B]
+             " " -> return " "
+             "\"" -> return [chr 0x22]
+             "/" -> return "/"
+             "\\" -> return "\\"
+             "N" -> return [chr 0x85]
+             "_" -> return [chr 0xA0]
+             "L" -> return [chr 0x202B]
+             "P" -> return [chr 0x2029]
+             'x':s | length s == 2 -> maybeRead s >>= return . (:[]) . chr
+             'u':s | length s == 4 -> maybeRead s >>= return . (:[]) . chr
+             'U':s | length s == 8 -> maybeRead s >>= return . (:[]) . chr
+             _ -> fail $ "bad escape " ++ m
+
+maybeRead :: (Num a, Read a, Monad m) => String -> m a
+maybeRead s = 
+  case readHex s of
+    (a,_):_ -> return a
+    _       -> fail "error in escape"
+
 
 ypair = do
   bwi

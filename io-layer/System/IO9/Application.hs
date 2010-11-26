@@ -16,6 +16,10 @@
 module System.IO9.Application (
   nestYaml
  ,readYaml
+ ,appDefaults
+ ,AppDescr (..)
+ ,AppMode (..)
+ ,AppNsAdjust (..)
 ) where
 
 import System.IO9.Error
@@ -53,4 +57,18 @@ readYaml :: (Monad m, MonadCatchIO m)
          => PathHandle -> NameSpaceT m (Either SomeException [Token])
 
 readYaml ph = run (nsEnumBin 1024 ph $$ nestText $ nestYaml [] consume)
+
+-- | Default application settings (at least builtin name should be supplied).
+
+appDefaults :: String -> AppDescr
+
+appDefaults bi = AppDescr {
+    appBuiltIn = bi
+   ,appMode = AppWait
+   ,appNsAdjust = NsClone
+   ,appStdIn = Nothing
+   ,appStdOut = Nothing
+   ,appArgs = []
+   ,appPriv = Nothing
+  }
 
