@@ -57,6 +57,7 @@ data YamlElem
     | ESeq [YamlNode]
     | EStr String
     | ENil
+    | EError String
     deriving (Show, Ord, Eq)
 
 -- | Yaml token stream parser.
@@ -73,9 +74,11 @@ tokPos t = newPos "" (tLine t) (tLineChar t)
 -- BUGS! BUGS! BUGS! Indents and breaks/folds are poorly handled, 
 -- perhaps not at all...
 
-loadYaml :: [Token] -> Either ParseError [YamlElem]
+loadYaml :: [Token] -> [YamlElem]
 
-loadYaml = parse (bwi >> many ydoc) "" . ycomment
+loadYaml y = case parse (bwi >> many ydoc) "" $ ycomment y of
+  Left err -> [EError $ show err]
+  Right es -> es
 
 -- Generic token recognizers.
 

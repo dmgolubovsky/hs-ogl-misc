@@ -17,6 +17,7 @@ module System.IO9.Application (
   nestYaml
  ,readYaml
  ,appDefaults
+ ,appYaml
  ,AppDescr (..)
  ,AppMode (..)
  ,AppNsAdjust (..)
@@ -30,6 +31,7 @@ import Control.Exception
 import Data.Enumerator
 import Data.Nesteratee
 import Text.Yaml.EnumTok
+import Text.Yaml.Loader
 import Control.Monad.IO.Class
 import Control.Monad.CatchIO
 import qualified Data.Text as T
@@ -71,4 +73,50 @@ appDefaults bi = AppDescr {
    ,appArgs = []
    ,appPriv = Nothing
   }
+
+-- | Build an application descriptor given the parsed Yaml file (result of the Yaml loader).
+-- A suitable Yaml file should contain a mapping at the top level. The following map keys
+-- would map to the fields of an 'AppDescr':
+--
+--  - builtin: string  -> appBuiltIn (required)
+--  - mode: call | wait | nowait -> appMode
+--  - namespace: share | clone | <list> -> appNsAdjust
+--  - stdin: string -> appStdIn
+--  - stdout: string -> appStdOut
+--  - args: <list> -> appArgs
+--  - priv: admin | hostowner | none -> appPriv (world privileges can only be gotten via auth)
+-- 
+-- Omitted keys result in a default field value (see 'appDefaults'). Incorrect values
+-- result in build errors. Unknown keys are ignored. Repeated keys override their
+-- previous setting.
+-- If a parsed Yaml contains more than one document, only the first document will be used.
+
+yempty = "empty yaml application definition"
+
+appYaml :: [YamlElem] -> AppDescr
+
+appYaml [] = BuildError yempty
+appYaml (EError e:_) = BuildError e
+appYaml (EDocument _ ns:_) = appn ns
+
+appn [] = BuildError yempty
+appn (MkNode {n_elem = EMap mps}:_) =
+  let appd = foldl appm (appDefaults "") mps
+  in  case appd of
+        BuildError e -> BuildError e
+        AppDescr {appBuiltIn = ""} -> BuildError "builtin name not set"
+        _  -> appd
+appn _ = BuildError "expected a mapping at toplevel"
+
+appm (BuildError e) _ = BuildError e
+appm app (nkey, nval) = case scalval nkey of
+  Just "builtin" -> setbi nval app
+  _ -> app
+
+setbi nval app = case scalval nval of
+  Just s -> app {appBuiltIn = s}
+  Nothing -> BuildError "builtin: string expected"
+
+scalval (MkNode {n_elem = EStr s}) = Just s
+scalval _ = Nothing
 

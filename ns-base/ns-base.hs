@@ -34,7 +34,10 @@ main = do
     con <- nsEval "/dev/cons"
     (Right tks) <- readYaml ph
     dbgPrint $ show tks
-    dbgPrint $ show $ loadYaml tks
+    let ly = loadYaml tks
+    dbgPrint $ show $ ly
+    dbgPrint $ show $ appYaml ly
+    
 
 
 procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ([Token])
