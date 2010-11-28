@@ -133,9 +133,9 @@ data AppDescr = BuildError String                -- ^ Error while building an ap
                   appBuiltIn :: String           -- ^ Base builtin function
                  ,appMode :: AppMode             -- ^ Application run mode
                  ,appNsAdjust :: AppNsAdjust     -- ^ Application namespace adjustment
-                 ,appStdIn :: Maybe PathHandle   -- ^ Inherited or new standard input
-                 ,appStdOut :: Maybe PathHandle  -- ^ Inherited or new standard output
-                 ,appArgs :: [Argument]          -- ^ Preset arguments (incl. redirections)
+                 ,appStdIn :: Maybe FilePath     -- ^ Inherited or new standard input
+                 ,appStdOut :: Maybe FilePath    -- ^ Inherited or new standard output
+                 ,appArgs :: [String]            -- ^ Preset arguments (incl. redirections)
                  ,appPriv :: Maybe ProcPriv      -- ^ Privileges requested (subject to validation)
                 }
               deriving (Show)
@@ -151,5 +151,5 @@ data AppMode = AppCall                           -- ^ Just call the builtin func
 
 data AppNsAdjust = NsShare                       -- ^ Share namespace with parent
                  | NsClone                       -- ^ Copy parent namespace, not shared
-                 | NsBuild NameSpace             -- ^ Build namespace from scratch
+                 | NsBuild [String]              -- ^ Build namespace from scratch
                    deriving (Show)

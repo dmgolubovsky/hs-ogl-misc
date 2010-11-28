@@ -24,11 +24,14 @@ module System.IO9.Application (
 ) where
 
 import System.IO9.Error
+import System.IO9.DevLayer
 import System.IO9.NameSpaceT
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
 import Control.Exception
-import Data.Enumerator
+import Data.List
+import Data.Maybe
+import Data.Enumerator hiding (map)
 import Data.Nesteratee
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
@@ -92,6 +95,8 @@ appDefaults bi = AppDescr {
 -- If a parsed Yaml contains more than one document, only the first document will be used.
 
 yempty = "empty yaml application definition"
+yexpstr xx = BuildError $ xx ++ ": string expected"
+yexpchc xx ss = BuildError $ xx ++ ": expected " ++ intercalate " | " ss
 
 appYaml :: [YamlElem] -> AppDescr
 
@@ -111,12 +116,56 @@ appn _ = BuildError "expected a mapping at toplevel"
 appm (BuildError e) _ = BuildError e
 appm app (nkey, nval) = case scalval nkey of
   Just "builtin" -> setbi nval app
+  Just "mode" -> setmode nval app
+  Just "namespace" -> setns nval app
+  Just "stdin" -> setsi nval app
+  Just "stdout" -> setso nval app
+  Just "priv" -> setpriv nval app
+  Just "args" -> setargs nval app
   _ -> app
+
+setsi nval app = case scalval nval of
+  Just s -> app {appStdIn = Just s}
+  Nothing -> yexpstr "stdin"
+
+setso nval app = case scalval nval of
+  Just s -> app {appStdOut = Just s}
+  Nothing -> yexpstr "stdout"
 
 setbi nval app = case scalval nval of
   Just s -> app {appBuiltIn = s}
-  Nothing -> BuildError "builtin: string expected"
+  Nothing -> yexpstr "builtin"
+
+setpriv nval app = case scalval nval of
+  Just "admin" -> app {appPriv = Just Admin}
+  Just "hostowner" -> app {appPriv = Just HostOwner}
+  Just "none" -> app {appPriv = Just None}
+  Just _ -> yexpchc "priv" ["admin", "hostowner", "none"]
+  Nothing -> yexpstr "priv"
+
+setmode nval app = case scalval nval of
+  Just "call" -> app {appMode = AppCall}
+  Just "wait" -> app {appMode = AppWait}
+  Just "nowait" -> app {appMode = AppNoWait}
+  Just _ -> yexpchc "mode" ["call", "wait", "nowait"]
+  Nothing -> yexpstr "mode"
+
+setns nval app = case scalval nval of
+  Just "share" -> app {appNsAdjust = NsShare}
+  Just "clone" -> app {appNsAdjust = NsClone}
+  Just _ -> yexpchc "namespace" ["share", "clone", "<list>"]
+  Nothing -> case listval nval of
+    Just [] -> BuildError "namespace: non-empty list of strings expected"
+    Just bcs -> app {appNsAdjust = NsBuild bcs}
+    Nothing -> yexpchc "namespace" ["share", "clone", "<list>"]
+
+setargs nval app = case listval nval of
+  Just bcs | (not $ null bcs) -> app {appArgs = bcs}
+  _ -> BuildError "args: non-empty list of strings expected"
 
 scalval (MkNode {n_elem = EStr s}) = Just s
 scalval _ = Nothing
+
+listval (MkNode {n_elem = ESeq ns}) = Just $ catMaybes $ map scalval ns
+listval _ = Nothing
 
