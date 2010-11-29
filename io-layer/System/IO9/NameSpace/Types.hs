@@ -26,6 +26,7 @@ module System.IO9.NameSpace.Types (
   ,AppDescr (..)
   ,AppMode (..)
   ,AppNsAdjust (..)
+  ,RawBind (..)
 ) where
 
 import System.IO9.DevLayer
@@ -117,7 +118,8 @@ instance Ord PathHandle where
 -- is desired to be appended to an existing file, or truncate an existing file, but this
 -- is up to the application to honor.
 
-data Argument = TextArg T.Text                   -- ^ Arbitrary text
+data Argument = RawArg String                    -- ^ Raw argument (from parsed Yaml)
+              | TextArg T.Text                   -- ^ Arbitrary text
               | OptArg Char T.Text               -- ^ Single-character option
               | RedirIn T.Text PathHandle        -- ^ Input redirect
               | RedirOut Bool T.Text PathHandle  -- ^ Output redirect
@@ -135,7 +137,7 @@ data AppDescr = BuildError String                -- ^ Error while building an ap
                  ,appNsAdjust :: AppNsAdjust     -- ^ Application namespace adjustment
                  ,appStdIn :: Maybe FilePath     -- ^ Inherited or new standard input
                  ,appStdOut :: Maybe FilePath    -- ^ Inherited or new standard output
-                 ,appArgs :: [String]            -- ^ Preset arguments (incl. redirections)
+                 ,appArgs :: [Argument]          -- ^ Preset arguments (incl. redirections)
                  ,appPriv :: Maybe ProcPriv      -- ^ Privileges requested (subject to validation)
                 }
               deriving (Show)
@@ -151,5 +153,14 @@ data AppMode = AppCall                           -- ^ Just call the builtin func
 
 data AppNsAdjust = NsShare                       -- ^ Share namespace with parent
                  | NsClone                       -- ^ Copy parent namespace, not shared
-                 | NsBuild [String]              -- ^ Build namespace from scratch
+                 | NsBuild [RawBind]             -- ^ Build namespace from scratch
                    deriving (Show)
+
+-- | Raw path binding descriptor.
+
+data RawBind = RawBind {
+  rbFlag :: Maybe BindFlag                       -- ^ Bind flags
+ ,rbNew :: FilePath                              -- ^ New path
+ ,rbOld :: FilePath}                             -- ^ Old path
+  deriving (Show)
+

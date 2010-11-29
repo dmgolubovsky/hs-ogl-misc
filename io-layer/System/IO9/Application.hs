@@ -21,6 +21,7 @@ module System.IO9.Application (
  ,AppDescr (..)
  ,AppMode (..)
  ,AppNsAdjust (..)
+ ,RawBind (..)
 ) where
 
 import System.IO9.Error
@@ -31,7 +32,7 @@ import System.IO9.NameSpace.Types
 import Control.Exception
 import Data.List
 import Data.Maybe
-import Data.Enumerator hiding (map)
+import Data.Enumerator hiding (map, length)
 import Data.Nesteratee
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
@@ -153,14 +154,43 @@ setmode nval app = case scalval nval of
 setns nval app = case scalval nval of
   Just "share" -> app {appNsAdjust = NsShare}
   Just "clone" -> app {appNsAdjust = NsClone}
-  Just _ -> yexpchc "namespace" ["share", "clone", "<list>"]
-  Nothing -> case listval nval of
-    Just [] -> BuildError "namespace: non-empty list of strings expected"
-    Just bcs -> app {appNsAdjust = NsBuild bcs}
-    Nothing -> yexpchc "namespace" ["share", "clone", "<list>"]
+  Just _ -> yexpchc "namespace" ["share", "clone", "<map>"]
+  Nothing -> case nval of
+    MkNode {n_elem = EMap nsmp} -> app {appNsAdjust = NsBuild $ concatMap mapns nsmp}
+    _ -> yexpchc "namespace" ["share", "clone", "<map>"]
+
+-- We expect a notation like this:
+--
+-- namespace:
+--  /dev: 
+--   "#A": -b
+--   "#c":
+--  /proc: 
+--   "#p":
+--
+-- The #A and #p binds are without flags (that is, BindReplace), therefore nothing
+-- after the colon. Such notation yields a two-level mapping.
+
+mapns (kold, nmap) = case scalval kold of
+  Just s | (not $ null s) -> newbnd s nmap
+  _ -> []
+
+newbnd old (MkNode {n_elem = EMap newpf}) = concatMap bnd newpf where
+  bnd (newp, bopt) = case (scalval newp, scalval bopt) of
+    (Just p, Just b) | (not $ null p) -> [RawBind {rbFlag = bf b, rbOld = old, rbNew = p}]
+    _ -> []
+  bf "" = Just BindRepl
+  bf ('-':ff) = case (length ff, 'b' `elem` ff, 'a' `elem` ff) of
+    (1, True, _) -> Just $ BindBefore False
+    (1, _, True) -> Just $ BindAfter False
+    (2, True, False) -> Just $ BindBefore ('c' `elem`ff)
+    (2, False, True) -> Just $ BindAfter ('c' `elem` ff)
+    _ -> Nothing
+  bf _ = Nothing
+newbnd _ _ = []
 
 setargs nval app = case listval nval of
-  Just bcs | (not $ null bcs) -> app {appArgs = bcs}
+  Just bcs | (not $ null bcs) -> app {appArgs = map RawArg bcs}
   _ -> BuildError "args: non-empty list of strings expected"
 
 scalval (MkNode {n_elem = EStr s}) = Just s
