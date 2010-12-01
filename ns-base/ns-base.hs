@@ -14,6 +14,7 @@ import System.Environment.UTF8
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import System.IO9.Application
+import Control.Monad
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
 import System.Console.CmdArgs
@@ -36,6 +37,26 @@ data EchoArgs = EchoArgs {
 main = do
   argsx <- getArgs
   dev <- devHost [(rootdir, "/")]
+  when (null argsx) $ fail "Need at least one argument"
+  let init = head argsx
+  nsInit NsBase.apps [dev] $ do
+    nsBind BindRepl "#Z" "/"
+    ph <- nsEval init
+    (Right tks) <- readYaml ph
+    let app = appYaml $ loadYaml tks
+    appBind app
+    let ech = EchoArgs {
+                n = def &= help "do not output the trailing newline"
+               ,e = def &= help "enable interpretation of backslash escapes"
+               ,s = def &= args &= typ "STRING"
+              } &= program "echo"
+    let mode = cmdArgsMode ech
+    dbgPrint $ show mode
+    let ea = process mode argsx
+    dbgPrint $ show ea
+
+
+{-
   let app = head (argsx ++ ["/"])
   nsInit NsBase.apps [dev] $ do
     nsBind BindRepl "#Z" "/"
@@ -50,7 +71,13 @@ main = do
     dbgPrint $ show mode
     let ea = process mode argsx
     dbgPrint $ show ea
-
+    ph <- nsEval app
+    (Right tks) <- readYaml ph
+    dbgPrint $ show tks
+    let ly = loadYaml tks
+    dbgPrint $ show $ ly
+    dbgPrint $ show $ appYaml ly
+-}
 
 procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ([Token])
 

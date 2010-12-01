@@ -18,6 +18,7 @@ module System.IO9.Application (
  ,readYaml
  ,appDefaults
  ,appYaml
+ ,appBind
  ,AppDescr (..)
  ,AppMode (..)
  ,AppNsAdjust (..)
@@ -63,6 +64,19 @@ readYaml :: (Monad m, MonadCatchIO m)
          => PathHandle -> NameSpaceT m (Either SomeException [Token])
 
 readYaml ph = run (nsEnumBin 1024 ph $$ nestText $ nestYaml [] consume)
+
+-- | Given the 'appNsAdjust' field in the application descriptor, adjust the current
+-- namespace according to the list of 'RawBind' structures.
+
+appBind :: MonadIO m => AppDescr -> NameSpaceT m ()
+
+appBind (BuildError _) = return ()
+
+appBind ad = case appNsAdjust ad of
+  NsBuild rbds -> mapM_ onebind rbds where
+    onebind rb | isJust $ rbFlag rb = nsBind (fromJust $ rbFlag rb) (rbNew rb) (rbOld rb)
+    onebind _ = return ()
+  _ -> return ()
 
 -- | Default application settings (at least builtin name should be supplied).
 
@@ -146,9 +160,10 @@ setpriv nval app = case scalval nval of
 
 setmode nval app = case scalval nval of
   Just "call" -> app {appMode = AppCall}
+  Just "jump" -> app {appMode = AppJump}
   Just "wait" -> app {appMode = AppWait}
   Just "nowait" -> app {appMode = AppNoWait}
-  Just _ -> yexpchc "mode" ["call", "wait", "nowait"]
+  Just _ -> yexpchc "mode" ["call", "jump", "wait", "nowait"]
   Nothing -> yexpstr "mode"
 
 setns nval app = case scalval nval of

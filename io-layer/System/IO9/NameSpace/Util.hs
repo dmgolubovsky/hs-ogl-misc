@@ -256,3 +256,8 @@ mapUser u st =
 logName :: IO String
 
 logName  = getLoginName `Control.Exception.catch` (\(e::SomeException) -> getEnv "USER")
+
+
+
+
+

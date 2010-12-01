@@ -142,10 +142,11 @@ data AppDescr = BuildError String                -- ^ Error while building an ap
                 }
               deriving (Show)
 
--- | Application run mode.
+-- | Application run mode. Only thread with 'Init' privileges may use 'AppJump'
 
 data AppMode = AppCall                           -- ^ Just call the builtin function
              | AppWait                           -- ^ Fork a thread and wait for its completion
+             | AppJump                           -- ^ Execute an application in the same thread
              | AppNoWait                         -- ^ Fork a thread and run in parallel
                deriving (Show)
 
