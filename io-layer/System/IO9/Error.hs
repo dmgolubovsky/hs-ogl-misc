@@ -22,7 +22,8 @@ import Data.Typeable
 import Control.Exception
 
 data NineError = OtherError String
-               | Located String NineError
+ | Located String NineError
+ | EmptyStatus
  | Enoerror	-- ^ no error
  | Emount	-- ^ inconsistent mount
  | Eunmount	-- ^ not mounted
@@ -81,6 +82,7 @@ data NineError = OtherError String
 instance Show NineError where
   show (OtherError s) = s
   show (Located s e) = s ++ ": " ++ show e
+  show (EmptyStatus) = ""
   show Enoerror = "no error"
   show Emount = "inconsistent mount"
   show Eunmount = "not mounted"

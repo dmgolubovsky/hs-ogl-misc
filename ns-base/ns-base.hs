@@ -50,7 +50,16 @@ main = do
        ,pargs = def &= args &= typ "STRING"
       } &= program "ns-base" &= versionArg [ignore]
   iargs <- cmdArgs iarg
-  putStrLn $ show iargs
+  dev <- devHost [(r iargs, "/")]
+  nsInit NsBase.apps [dev] $ do
+    nsBind BindRepl (d iargs) "/"
+    ph <- nsEval (i iargs)
+    etks <- readYaml ph
+    case etks of
+      Left s -> dbgPrint (show s) >> return ()
+      Right tks -> do
+      let app = appYaml $ loadYaml tks
+      dbgPrint (show app)
 
 {-
 

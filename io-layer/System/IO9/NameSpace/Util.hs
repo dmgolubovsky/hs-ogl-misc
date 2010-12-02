@@ -134,13 +134,13 @@ eval_step da (".." : rawps) orig eval = do
 -- has been found, replace eval with it, and repeat until the path to evaluate is entirely
 -- consumed.
 
-eval_step da (rawp : rawps) orig eval = do
+eval_step da r@(rawp : rawps) orig eval = do
   let jeval = joinPath eval
       jorig = joinPath orig
       nrawp = normalise (rawp ++ if null rawps then "" else "/")
   undirs <- asks sel2 >>= return . findunion jorig >>=  return . map dirph >>=
     \ps -> return (if null ps then [da] else map phAttach ps)
-  foldr mplus (throw Enonexist) $ flip map undirs $ \dda -> do
+  foldr mplus (throw $ Located (joinPath $ orig ++ r) Enonexist) $ flip map undirs $ \dda -> do
     wda <- liftIO $ (devWalk dda nrawp `catchException` (\(e :: NineError) -> fail ""))
     eval_step wda rawps (orig ++ [rawp]) (eval ++ [rawp])
 
