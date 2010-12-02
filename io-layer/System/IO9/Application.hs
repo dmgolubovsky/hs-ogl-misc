@@ -10,7 +10,7 @@
 -- 
 --
 --
--- General support for embedded applications.
+-- General user-level support for embedded applications.
 ------------------------------------------------------------------
 
 module System.IO9.Application (
@@ -84,7 +84,7 @@ appDefaults :: String -> AppDescr
 
 appDefaults bi = AppDescr {
     appBuiltIn = bi
-   ,appMode = AppWait
+   ,appMode = AppFork
    ,appNsAdjust = NsClone
    ,appStdIn = Nothing
    ,appStdOut = Nothing
@@ -97,7 +97,7 @@ appDefaults bi = AppDescr {
 -- would map to the fields of an 'AppDescr':
 --
 --  - builtin: string  -> appBuiltIn (required)
---  - mode: call | wait | nowait -> appMode
+--  - mode: jump | fork -> appMode
 --  - namespace: share | clone | <list> -> appNsAdjust
 --  - stdin: string -> appStdIn
 --  - stdout: string -> appStdOut
@@ -159,11 +159,9 @@ setpriv nval app = case scalval nval of
   Nothing -> yexpstr "priv"
 
 setmode nval app = case scalval nval of
-  Just "call" -> app {appMode = AppCall}
   Just "jump" -> app {appMode = AppJump}
-  Just "wait" -> app {appMode = AppWait}
-  Just "nowait" -> app {appMode = AppNoWait}
-  Just _ -> yexpchc "mode" ["call", "jump", "wait", "nowait"]
+  Just "fork" -> app {appMode = AppFork}
+  Just _ -> yexpchc "mode" ["jump", "fork"]
   Nothing -> yexpstr "mode"
 
 setns nval app = case scalval nval of

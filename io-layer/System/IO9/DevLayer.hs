@@ -88,6 +88,26 @@ data ProcPriv = Init                             -- ^ The initial process
               | None                             -- ^ Special privilege level for servers
                 deriving (Show)
 
+-- An Enum instance of thread privileges level is used to compare privileges.
+
+instance Enum ProcPriv where
+  toEnum 5 = Init
+  toEnum 4 = Admin
+  toEnum 3 = HostOwner
+  toEnum 2 = World "" ""                         -- just to have it here
+  toEnum 0 = None
+  fromEnum Init = 5
+  fromEnum Admin = 4
+  fromEnum HostOwner = 3
+  fromEnum (World _ _) = 2
+  fromEnum None = 0
+
+instance Eq ProcPriv where
+  a == b = fromEnum a == fromEnum b
+
+instance Ord ProcPriv where
+  compare a b = compare (fromEnum a) (fromEnum b)
+
 -- Show the full device path of the object in the attachment.
 
 instance Show DevAttach where

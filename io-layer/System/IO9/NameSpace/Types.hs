@@ -27,9 +27,12 @@ module System.IO9.NameSpace.Types (
   ,AppMode (..)
   ,AppNsAdjust (..)
   ,RawBind (..)
+  ,AppHandle (..)
 ) where
 
 import System.IO9.DevLayer
+import System.IO9.Error
+import Control.Concurrent
 import Control.Concurrent.MVar
 import qualified Data.Map as M
 import qualified Data.DList as DL
@@ -89,6 +92,7 @@ data NsEnv = NsEnv {
   ,nspace :: MVar NameSpace
   ,stdinp :: FilePath
   ,stdoutp :: FilePath
+  ,parent :: ThreadId
 }
 
 -- | A semi-opaque data type to represent an evaluated path. Note that path handles
@@ -144,10 +148,8 @@ data AppDescr = BuildError String                -- ^ Error while building an ap
 
 -- | Application run mode. Only thread with 'Init' privileges may use 'AppJump'
 
-data AppMode = AppCall                           -- ^ Just call the builtin function
-             | AppWait                           -- ^ Fork a thread and wait for its completion
-             | AppJump                           -- ^ Execute an application in the same thread
-             | AppNoWait                         -- ^ Fork a thread and run in parallel
+data AppMode = AppJump                           -- ^ Execute an application in the same thread
+             | AppFork                           -- ^ Fork a thread and run in parallel
                deriving (Show)
 
 -- | Application namespace adjustment.
@@ -164,4 +166,10 @@ data RawBind = RawBind {
  ,rbNew :: FilePath                              -- ^ New path
  ,rbOld :: FilePath}                             -- ^ Old path
   deriving (Show)
+
+-- | Application handle.
+
+data AppHandle = AppCompleted String             -- ^ Application has completed
+               | AppRunning ThreadId 
+                            (MVar NineError)     -- ^ Application is currently running
 

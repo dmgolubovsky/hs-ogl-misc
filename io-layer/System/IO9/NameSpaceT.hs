@@ -19,6 +19,7 @@ module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
  ,nsInit
+-- ,nsRunApp
  ,dbgPrint
  ,dbgChunks
  ,PathHandle (phCanon)
@@ -39,6 +40,7 @@ module System.IO9.NameSpaceT (
  ,nsStdOut
  ,Application (..)
  ,AppTable (..)
+ ,AppHandle
  ,appTable
  ,appEntry
  ,nestText
@@ -59,6 +61,7 @@ import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Exception
+import Control.Concurrent
 import System.Environment
 import qualified Data.Map as M
 import System.IO9.NameSpace.Monad
@@ -74,7 +77,10 @@ import Data.Nesteratee
 
 
 -- | Run the "init" program with the given device list and empty namespace
--- (it is expected that it builds the namespace from scratch).
+-- (it is expected that it builds the namespace from scratch). The parent
+-- thread handle is set to this thread's handle. Standard input and output
+-- are directed to the console. Console device and the builtin applications 
+-- device are always initialized.
 
 nsInit :: (MonadIO m) => AppTable m -> [DevTable] -> NameSpaceT m () -> m ()
 
@@ -83,6 +89,7 @@ nsInit apps dts nsi = do
   hu <- liftIO logName
   cons <- liftIO devCons
   apps <- liftIO $ devApps apps
+  thr <- liftIO myThreadId
   let bids = [cons, apps]
       dts' = dts ++ bids
   let dvm = M.fromList $ zip (map devchar dts') dts'
@@ -93,8 +100,29 @@ nsInit apps dts nsi = do
        ,nspace = mv
        ,stdinp = "#c/cons"
        ,stdoutp = "#c/cons"
+       ,parent = thr
       }
   runNameSpaceT nsi `runReaderT` env
+
+-- | Run an application. This is the "privileged" part of the whole process: actions
+-- allowed at the user level are handled in the 'System.IO9.Application' module.
+-- This function sets the relevant parts of the application context and either
+-- forks a thread for a new application or continues running in the original thread
+-- (the latter is only allowed if running with the 'Init' privileges, and is not to be
+-- generally used).
+--
+-- This function takes an 'AppDescr' (application descriptor) data structure, and
+-- runs the supplied application function with type @Monad m => NameSpaceT m NineError@.
+-- Note that this is not yet application itself which is supposed to be a 'Nesteratee'
+-- in order to access the file I/O. The user supplied code is expected to handle that itself.
+--
+-- The following rules apply:
+--
+--  - Jumping to an application is only allowed if the current process privilege level is 'Init'.
+--  - If the application descriptor requests certain privilege level, it can only be same
+--    or lower than the parent thread has.
+--  - If the application descriptor requests the namespace to be shared, the requested
+--    privilege level should be either the same as the parent thread has, or lower.
 
 -- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
 -- evaluated. One exception however applies when binding to the "/" old path to the empty 
