@@ -173,3 +173,7 @@ data AppHandle = AppCompleted String             -- ^ Application has completed
                | AppRunning ThreadId 
                             (MVar NineError)     -- ^ Application is currently running
 
+instance Show AppHandle where
+  show (AppCompleted s) = "Completed: " ++ s
+  show (AppRunning t _) = "Running as " ++ show t
+

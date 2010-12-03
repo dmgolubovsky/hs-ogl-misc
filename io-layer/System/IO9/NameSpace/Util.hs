@@ -81,7 +81,7 @@ eval_root (dvp : rawps) xps | isDevice dvp = do
   let orig = head (xps ++ [dvp])
   eval_step da rawps [orig] [dvp]
 
-eval_root _ _ = liftIO $ throwIO Efilename
+eval_root p _ = liftIO $ throwIO $ Located (joinPath p) Efilename
 
 -- Evaluate the rest of the path step-wise.
 
@@ -206,14 +206,14 @@ do_operation mv f = do
 
 attdev :: FilePath -> EvalM DevAttach
 
-attdev fp | not (isDevice fp) = liftIO $ throwIO Ebadsharp
+attdev fp | not (isDevice fp) = liftIO $ throwIO $ Located fp Ebadsharp
 
 attdev fp = do
   kt <- asks sel1
   pr <- asks sel3
   let mbdt = M.lookup (deviceOf fp) kt
   liftIO $ case mbdt of
-    Nothing -> throwIO Ebadsharp
+    Nothing -> throwIO $ Located fp Ebadsharp
     Just dt -> devAttach dt pr (treeOf fp)
   
 

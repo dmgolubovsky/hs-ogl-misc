@@ -10,6 +10,7 @@ import Data.Data
 import Data.Nesteratee
 import System.FilePath
 import System.Environment.UTF8
+import System.IO9.Error
 import System.IO9.HostAccess
 import System.IO9.NameSpaceT
 import System.IO9.Application
@@ -59,7 +60,10 @@ main = do
       Left s -> dbgPrint (show s) >> return ()
       Right tks -> do
       let app = appYaml $ loadYaml tks
-      dbgPrint (show app)
+      res <- nsRunApp app $ do
+        appBind app
+        (nsEval (pgm iargs) >>= dbgPrint . show >> return Enoerror) `nsCatch` return
+      dbgPrint $ show res
 
 {-
 

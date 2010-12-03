@@ -19,7 +19,7 @@ module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
  ,nsInit
--- ,nsRunApp
+ ,nsRunApp
  ,dbgPrint
  ,dbgChunks
  ,PathHandle (phCanon)
@@ -119,10 +119,32 @@ nsInit apps dts nsi = do
 -- The following rules apply:
 --
 --  - Jumping to an application is only allowed if the current process privilege level is 'Init'.
+--
 --  - If the application descriptor requests certain privilege level, it can only be same
---    or lower than the parent thread has.
+--    or lower than the parent thread has. Default ('appPriv' = 'Nothing') corresponds to
+--    'HostOwner' privileges; 'Admin' or 'Init' or 'None' must be requested explicitly.
+--    'World' cannot be requested: this privilege level can appear only in the 'DevAttach'
+--    structure.
+--
 --  - If the application descriptor requests the namespace to be shared, the requested
---    privilege level should be either the same as the parent thread has, or lower.
+--    privilege level should be the same as the parent thread has.
+--
+--  - If the 'AppJump' mode is requested, new thread is not created, and the value returned
+--    is an 'AppHandle' representing a completed thread. Namespace may only be shared (in fact,
+--    the current thread's environment is just reused).
+
+nsRunApp :: (MonadIO m)
+         => AppDescr                             -- ^ Application descriptor
+         -> NameSpaceT m NineError               -- ^ To run in the application
+         -> NameSpaceT m AppHandle               -- ^ Returned value
+
+nsRunApp ad thr = case appMode ad of
+  AppJump -> do
+    priv <- NameSpaceT $ asks priv
+    when (priv < Init) $ NameSpaceT $ liftIO $ throwIO $ Located "nsRunApp" Eperm
+    thr >>= return . AppCompleted . show
+  AppFork -> NameSpaceT $ liftIO $ throwIO $ OtherError "Not implemented"
+
 
 -- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
 -- evaluated. One exception however applies when binding to the "/" old path to the empty 
@@ -136,7 +158,7 @@ nsBind :: MonadIO m
        -> NameSpaceT m ()              -- ^ No return value, namespace updated under the hood
 
 nsBind _ new old | not ((isAbsolute new || isDevice new) && (isAbsolute old || isDevice old)) =
-  NameSpaceT $ liftIO $ throwIO Efilename
+  NameSpaceT $ liftIO $ throwIO $ Located new Efilename
 
 
 nsBind fl new old | old == "/" && isDevice new = NameSpaceT $ do
@@ -166,7 +188,7 @@ nsBind fl new old = NameSpaceT $ do
 nsEval :: (MonadIO m) => FilePath -> NameSpaceT m PathHandle
 
 nsEval fp | not (isAbsolute fp || isDevice fp) =
-  NameSpaceT $ liftIO $ throw Efilename
+  NameSpaceT $ liftIO $ throw $ Located fp Efilename
 
 nsEval fp = NameSpaceT $ do
   ns <- asks nspace >>= liftIO . readMVar
@@ -185,17 +207,18 @@ nsCreate :: MonadIO m
          -> Word32                        -- ^ Creation mode/permissions
          -> NameSpaceT m PathHandle       -- ^ Handle of the created object
 
-nsCreate dph fp mode | '/' `elem` fp = NameSpaceT $ liftIO $ throwIO Ebadarg
+nsCreate dph fp mode | '/' `elem` fp = NameSpaceT $ liftIO $ throwIO $ Located fp Ebadarg
 
 nsCreate dph fp mode = NameSpaceT $ do
-  when (((qid_typ $ devqid $ phAttach dph) .&. c_QTDIR) == 0) $ liftIO $ throwIO Enotdir
+  when (((qid_typ $ devqid $ phAttach dph) .&. c_QTDIR) == 0) $ 
+    liftIO $ throwIO $ Located (show dph) Enotdir
   ns <- asks nspace >>= liftIO . readMVar
   let un = findunion (phCanon dph) ns
       dirs = filter dircr un
       dda = case dirs of
         [] -> phAttach dph
         (d:_) -> phAttach $ dirph d
-  when (null dirs && not (null un)) $ liftIO $ throwIO Enocreate
+  when (null dirs && not (null un)) $ liftIO $ throwIO $ Located (show dph) Enocreate
   da <- liftIO $ devCreate dda fp mode
   let newpath = tail $ normalise ("x" ++ phCanon dph ++ "/" ++ fp)
   return PathHandle {
@@ -234,7 +257,8 @@ nsWstat :: (MonadIO m)
         -> Stat                           -- ^ A 'Stat' structure whose fields specify changes
         -> NameSpaceT m PathHandle        -- ^ Handle of the same object with updated attrs.
 
-nsWstat ph st | '/' `elem` st_name st = NameSpaceT $ liftIO $ throwIO Ebadarg
+nsWstat ph st | '/' `elem` st_name st = NameSpaceT $ 
+  liftIO $ throwIO $ Located (st_name st) Ebadarg
 
 nsWstat ph st = NameSpaceT $ liftIO $ do
   nda <- devWstat (phAttach ph) st
