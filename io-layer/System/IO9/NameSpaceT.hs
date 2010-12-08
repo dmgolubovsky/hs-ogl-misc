@@ -19,7 +19,8 @@ module System.IO9.NameSpaceT (
   BindFlag (..)
  ,NameSpaceT
  ,nsInit
- ,nsRunApp
+ ,nsFork
+ ,nsWait
  ,dbgPrint
  ,dbgChunks
  ,PathHandle (phCanon)
@@ -51,12 +52,14 @@ module System.IO9.NameSpaceT (
 import Data.Bits
 import Data.Word
 import Data.NineP
+import Data.Maybe
 import Data.NineP.Bits
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Reader
 import Control.Concurrent
+import qualified Control.Concurrent.Forkable as F
 import System.FilePath
 import System.IO9.DevLayer
 import System.IO9.Error
@@ -90,6 +93,8 @@ nsInit apps dts nsi = do
   cons <- liftIO devCons
   apps <- liftIO $ devApps apps
   thr <- liftIO myThreadId
+  attcons <- liftIO (devAttach cons Init "/" >>= flip devWalk "cons")
+  let consph = PathHandle {phAttach = attcons, phCanon = "#c/cons"}
   let bids = [cons, apps]
       dts' = dts ++ bids
   let dvm = M.fromList $ zip (map devchar dts') dts'
@@ -98,14 +103,15 @@ nsInit apps dts nsi = do
        ,priv = Init
        ,kdtbl = dvm
        ,nspace = mv
-       ,stdinp = "#c/cons"
-       ,stdoutp = "#c/cons"
+       ,stdinp = consph
+       ,stdoutp = consph
        ,parent = thr
       }
   runNameSpaceT nsi `runReaderT` env
 
--- | Run an application. This is the "privileged" part of the whole process: actions
--- allowed at the user level are handled in the 'System.IO9.Application' module.
+-- | Fork a new thread. This is the "privileged" part of running an application: actions
+-- allowed at the user level are handled in the 'System.IO9.Application' module,
+-- such as building an application descriptor, adjusting redirected path handles, etc.
 -- This function sets the relevant parts of the application context and either
 -- forks a thread for a new application or continues running in the original thread
 -- (the latter is only allowed if running with the 'Init' privileges, and is not to be
@@ -132,19 +138,75 @@ nsInit apps dts nsi = do
 --  - If the 'AppJump' mode is requested, new thread is not created, and the value returned
 --    is an 'AppHandle' representing a completed thread. Namespace may only be shared (in fact,
 --    the current thread's environment is just reused).
+--
+--  If any of the above checks fails, 'nsFork' throws an exception. Execution of the new thread
+--  does not even start in such case.
 
-nsRunApp :: (MonadIO m)
-         => AppDescr                             -- ^ Application descriptor
-         -> NameSpaceT m NineError               -- ^ To run in the application
-         -> NameSpaceT m AppHandle               -- ^ Returned value
+nsFork :: (MonadIO m, F.ForkableMonad m, C.MonadCatchIO m)
+       => AppDescr                               -- ^ Application descriptor
+       -> NameSpaceT m NineError                 -- ^ To run in the forked thread
+       -> NameSpaceT m AppHandle                 -- ^ Returned value
 
-nsRunApp ad thr = case appMode ad of
-  AppJump -> do
-    priv <- NameSpaceT $ asks priv
-    when (priv < Init) $ NameSpaceT $ liftIO $ throwIO $ Located "nsRunApp" Eperm
-    thr >>= return . AppCompleted . show
-  AppFork -> NameSpaceT $ liftIO $ throwIO $ OtherError "Not implemented"
+nsFork ad thr = do
+  let runerr = NameSpaceT . liftIO . throwIO . Located "nsFork"
+  env <- NameSpaceT $ ask
+  let ppriv = priv env
+  ptid <- NameSpaceT $ liftIO myThreadId
+  case appMode ad of
+    AppJump -> do
+      when (ppriv < Init) $ runerr Eperm
+      thr >>= return . AppCompleted
+    AppFork -> do
+      let epriv = case appPriv ad of
+            Nothing -> HostOwner
+            Just p -> p
+          world (World _ _) = True
+          world _ = False
+          nshare NsShare = True
+          nshare _ = False
+      when (world epriv) $ runerr Ebadarg
+      when (epriv > ppriv) $ runerr Eperm
+      when (epriv /= ppriv && nshare (appNsAdjust ad)) $ runerr Ebadarg
+      let redir x y = case x of
+            Nothing -> return y
+            Just p -> nsEval p
+      appinph <- nsStdIn >>= redir (appStdIn ad)
+      appoutph <- nsStdOut >>= redir (appStdOut ad)
+      NameSpaceT $ do
+        mvwait <- liftIO $ newEmptyMVar
+        child <- F.forkIO $ lift $ do
+          newns <- liftIO $ case appNsAdjust ad of
+            NsBuild _ -> newMVar (M.empty)
+            NsShare -> return $ nspace env
+            NsClone -> do
+              nmv <- newEmptyMVar
+              omv <- readMVar (nspace env)
+              putMVar nmv omv
+              return nmv
+          let newenv = env {
+                priv = epriv
+               ,nspace = newns
+               ,parent = ptid
+               ,stdinp = appinph
+               ,stdoutp = appoutph
+              }
+          (runNameSpaceT thr `runReaderT` newenv >>= liftIO . putMVar mvwait) `C.catches`
+            [ C.Handler (liftIO . putMVar mvwait . Located "unhandled")
+             ,C.Handler (\(e :: SomeException) -> liftIO $ putMVar mvwait $ OtherError $ show e)]
+        return $ AppRunning child mvwait
 
+-- | Given an 'AppHandle', wait/check for application thread completion.
+
+nsWait :: MonadIO m
+       => Bool                        -- ^ 'True' to wait, 'False' otherwise
+       -> AppHandle                   -- ^ Handle of the application thread
+       -> NameSpaceT m NineError      -- ^ Process status ('StillRunning' or error value)
+
+nsWait _ (AppCompleted e) = return e
+
+nsWait w (AppRunning _ v) = NameSpaceT $ liftIO $ case w of
+  True -> takeMVar v
+  False -> tryTakeMVar v >>= return . fromMaybe StillRunning
 
 -- | Bind a path somewhere in the namespace. Both paths should be absolute or device, and will be 
 -- evaluated. One exception however applies when binding to the "/" old path to the empty 
@@ -273,14 +335,14 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
 nsStdIn :: (MonadIO m) 
         => NameSpaceT m PathHandle
 
-nsStdIn = NameSpaceT (asks stdinp) >>= nsEval
+nsStdIn = NameSpaceT (asks stdinp)
   
 -- | Create a 'PathHandle' for the standard output (as set in the Namespace environment)
 
 nsStdOut :: (MonadIO m) 
          => NameSpaceT m PathHandle
 
-nsStdOut = NameSpaceT (asks stdoutp) >>= nsEval
+nsStdOut = NameSpaceT (asks stdoutp)
   
 
 -- | A smart constructor for an 'AppTable' making it not necessary to explicitly

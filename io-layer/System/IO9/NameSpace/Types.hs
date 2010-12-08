@@ -90,8 +90,8 @@ data NsEnv = NsEnv {
   ,priv :: ProcPriv
   ,kdtbl :: DevMap
   ,nspace :: MVar NameSpace
-  ,stdinp :: FilePath
-  ,stdoutp :: FilePath
+  ,stdinp :: PathHandle
+  ,stdoutp :: PathHandle
   ,parent :: ThreadId
 }
 
@@ -169,11 +169,11 @@ data RawBind = RawBind {
 
 -- | Application handle.
 
-data AppHandle = AppCompleted String             -- ^ Application has completed
+data AppHandle = AppCompleted NineError          -- ^ Application has completed
                | AppRunning ThreadId 
                             (MVar NineError)     -- ^ Application is currently running
 
 instance Show AppHandle where
-  show (AppCompleted s) = "Completed: " ++ s
+  show (AppCompleted s) = "Completed: " ++ show s
   show (AppRunning t _) = "Running as " ++ show t
 

@@ -33,6 +33,7 @@ exposed-modules:
     System.IO9.DevGen, System.IO9.HostAccess    
 
 other-modules:
+    Control.Concurrent.Forkable,
     System.IO9.NameSpace.Monad, System.IO9.NameSpace.Types, System.IO9.NameSpace.Util,
     System.IO9.NameSpace.Enumerator,
     System.IO9.DevCons,

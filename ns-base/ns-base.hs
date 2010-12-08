@@ -60,10 +60,13 @@ main = do
       Left s -> dbgPrint (show s) >> return ()
       Right tks -> do
       let app = appYaml $ loadYaml tks
-      res <- nsRunApp app $ do
+      res <- nsFork app $ do
+--        nsBind BindRepl (d iargs) "/"
         appBind app
         (nsEval (pgm iargs) >>= dbgPrint . show >> return Enoerror) `nsCatch` return
       dbgPrint $ show res
+      w <- nsWait True res
+      dbgPrint $ show w
 
 {-
 
