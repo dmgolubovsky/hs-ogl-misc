@@ -30,8 +30,6 @@ import System.IO9.NameSpace.Types
 
 -- | A monad transformer over an IO-capable monad to provide namespaced I/O API.
 
-newtype (MonadIO m) => NameSpaceT m a = NameSpaceT {runNameSpaceT :: ReaderT NsEnv m a}
-
 instance (MonadIO m) => Monad (NameSpaceT m) where
     return = NameSpaceT . return
     m >>= k = NameSpaceT $ runNameSpaceT . k =<< runNameSpaceT m

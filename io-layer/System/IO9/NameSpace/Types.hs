@@ -28,12 +28,15 @@ module System.IO9.NameSpace.Types (
   ,AppNsAdjust (..)
   ,RawBind (..)
   ,AppHandle (..)
+  ,NameSpaceT (..)
 ) where
 
 import System.IO9.DevLayer
 import System.IO9.Error
 import Control.Concurrent
 import Control.Concurrent.MVar
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Reader
 import qualified Data.Map as M
 import qualified Data.DList as DL
 import qualified Data.Text as T
@@ -81,11 +84,13 @@ type NameSpace = M.Map FilePath UnionPoint
 
 type DevMap = M.Map Char DevTable
 
+newtype (MonadIO m) => NameSpaceT m a = NameSpaceT {runNameSpaceT :: ReaderT (NsEnv m) m a}
+
 -- Namespace execution environment consists of the kernel devices table
 -- (immutable), and a namespace itself (mutable transactional variable).
 -- It also contains the current process privileges, and host owner name.
 
-data NsEnv = NsEnv {
+data NsEnv m = NsEnv {
    hown :: String
   ,priv :: ProcPriv
   ,kdtbl :: DevMap
@@ -93,6 +98,7 @@ data NsEnv = NsEnv {
   ,stdinp :: PathHandle
   ,stdoutp :: PathHandle
   ,parent :: ThreadId
+  ,runapp :: FilePath -> [Argument] -> NameSpaceT m NineError
 }
 
 -- | A semi-opaque data type to represent an evaluated path. Note that path handles

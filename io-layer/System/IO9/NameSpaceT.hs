@@ -21,6 +21,7 @@ module System.IO9.NameSpaceT (
  ,nsInit
  ,nsFork
  ,nsWait
+ ,nsBuiltIn
  ,dbgPrint
  ,dbgChunks
  ,PathHandle (phCanon)
@@ -87,11 +88,11 @@ import Data.Nesteratee
 
 nsInit :: (MonadIO m) => AppTable m -> [DevTable] -> NameSpaceT m () -> m ()
 
-nsInit apps dts nsi = do
+nsInit aptb dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
   hu <- liftIO logName
   cons <- liftIO devCons
-  apps <- liftIO $ devApps apps
+  apps <- liftIO $ devApps aptb
   thr <- liftIO myThreadId
   attcons <- liftIO (devAttach cons Init "/" >>= flip devWalk "cons")
   let consph = PathHandle {phAttach = attcons, phCanon = "#c/cons"}
@@ -106,8 +107,30 @@ nsInit apps dts nsi = do
        ,stdinp = consph
        ,stdoutp = consph
        ,parent = thr
+       ,runapp = runBuiltIn aptb
       }
   runNameSpaceT nsi `runReaderT` env
+
+-- TODO !!!
+
+runBuiltIn :: MonadIO m => AppTable m -> FilePath -> [Argument] -> NameSpaceT m NineError
+
+runBuiltIn aptb nbi args = return EmptyStatus
+
+-- | Run a built-in function by name. Given the application descriptor, retrieve
+-- the builtin function name, find the function in the application table, and
+-- invoke the function with arguments provided. Usually this is done as the 
+-- final part of running an application.
+
+nsBuiltIn :: MonadIO m 
+          => AppDescr                            -- ^ Application descriptor
+          -> [Argument]                          -- ^ Arguments including redirections
+          -> NameSpaceT m NineError              -- ^ Application result
+
+nsBuiltIn ad args = do
+  runf <- NameSpaceT $ asks runapp
+  let nbi = appBuiltIn ad
+  runf nbi args
 
 -- | Fork a new thread. This is the "privileged" part of running an application: actions
 -- allowed at the user level are handled in the 'System.IO9.Application' module,
