@@ -17,11 +17,13 @@ import System.IO9.Application
 import Control.Monad
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
+import Data.Either
+import Data.Either.Unwrap
 import System.Console.CmdArgs
 import System.Console.CmdArgs.Implicit
 import System.Console.CmdArgs.Explicit
 import Control.Exception
-import Data.Enumerator hiding (head)
+--import Data.Enumerator hiding (head, map)
 import qualified Data.DList as D
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -60,10 +62,15 @@ main = do
       Left s -> dbgPrint (show s) >> return ()
       Right tks -> do
       let app = appYaml $ loadYaml tks
-      res <- nsFork app $ do
---        nsBind BindRepl (d iargs) "/"
+      res <- nsFork app $ (do
         appBind app
-        (nsEval (pgm iargs) >>= dbgPrint . show >> return Enoerror) `nsCatch` return
+        aph <- nsEval (pgm iargs)
+        pgmtks <- readYaml ph
+        when (isLeft pgmtks) $ throw $ fromLeft pgmtks
+        let pgmapp = appYaml $ loadYaml $ fromRight pgmtks
+        appBind pgmapp
+        let sargs = map RawArg (pargs iargs)
+        nsBuiltIn pgmapp sargs) `nsCatch` return
       dbgPrint $ show res
       w <- nsWait True res
       dbgPrint $ show w

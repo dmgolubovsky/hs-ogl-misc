@@ -78,6 +78,7 @@ import qualified Data.Text as T
 import qualified Data.ByteString as B
 import qualified Control.Monad.CatchIO as C
 import Data.Nesteratee
+import Data.Enumerator (run, ($$))
 
 
 -- | Run the "init" program with the given device list and empty namespace
@@ -86,7 +87,11 @@ import Data.Nesteratee
 -- are directed to the console. Console device and the builtin applications 
 -- device are always initialized.
 
-nsInit :: (MonadIO m) => AppTable m -> [DevTable] -> NameSpaceT m () -> m ()
+nsInit :: (MonadIO m, C.MonadCatchIO m) 
+       => AppTable m                             -- ^ Builtin applications table 
+       -> [DevTable]                             -- ^ User-configurable devices table
+       -> NameSpaceT m ()                        -- ^ Initialization code
+       -> m ()
 
 nsInit aptb dts nsi = do
   mv <- liftIO $ newMVar (M.empty)
@@ -111,18 +116,30 @@ nsInit aptb dts nsi = do
       }
   runNameSpaceT nsi `runReaderT` env
 
--- TODO !!!
+runBuiltIn :: (MonadIO m, C.MonadCatchIO m) 
+           => AppTable m 
+           -> FilePath 
+           -> [Argument] 
+           -> NameSpaceT m NineError
 
-runBuiltIn :: MonadIO m => AppTable m -> FilePath -> [Argument] -> NameSpaceT m NineError
-
-runBuiltIn aptb nbi args = return EmptyStatus
+runBuiltIn aptb nbi args = case M.lookup nbi aptb of
+  Nothing -> return Enonexist
+  Just appf -> do
+    appin <- nsStdIn
+    appout <- nsStdOut
+    nsWithBin appout 0 $ \out -> do
+      r <- run (nsEnumBin 1024 appin $$ appf args . nestYield EmptyStatus $ out)
+      case r of
+        Left err -> return $ Located nbi $ OtherError $ show err
+        Right res -> return res
+          
 
 -- | Run a built-in function by name. Given the application descriptor, retrieve
 -- the builtin function name, find the function in the application table, and
 -- invoke the function with arguments provided. Usually this is done as the 
 -- final part of running an application.
 
-nsBuiltIn :: MonadIO m 
+nsBuiltIn :: (MonadIO m, C.MonadCatchIO m)
           => AppDescr                            -- ^ Application descriptor
           -> [Argument]                          -- ^ Arguments including redirections
           -> NameSpaceT m NineError              -- ^ Application result

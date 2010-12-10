@@ -23,6 +23,7 @@ module System.IO9.Application (
  ,AppMode (..)
  ,AppNsAdjust (..)
  ,RawBind (..)
+ ,Argument (..)
 ) where
 
 import System.IO9.Error
