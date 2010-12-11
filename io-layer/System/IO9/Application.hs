@@ -19,6 +19,7 @@ module System.IO9.Application (
  ,appDefaults
  ,appYaml
  ,appBind
+ ,mapArgument
  ,AppDescr (..)
  ,AppMode (..)
  ,AppNsAdjust (..)
@@ -38,8 +39,10 @@ import Data.Enumerator hiding (map, length)
 import Data.Nesteratee
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.CatchIO
+import Text.ParserCombinators.Parsec
 import qualified Data.Text as T
 import qualified Data.ByteString as B
 
@@ -65,6 +68,51 @@ readYaml :: (Monad m, MonadCatchIO m)
          => PathHandle -> NameSpaceT m (Either SomeException [Token])
 
 readYaml ph = run (nsEnumBin 1024 ph $$ nestText $ nestYaml [] consume)
+
+-- | Process an argument transforming it into an I/O redirections where applicable.
+-- Redirections syntax is as follows: 
+--
+--   - name>path for writing with truncation
+--   - name>>path for writing with appending
+--   - name<path for reading
+--
+-- The argument should not be quoted. Paths should be absolute or device (starting with
+-- '/' or '#'). Names should be alphanumeric starting with alpha (of any case).
+-- All arguments not qualifying for redirections are passed as they are.
+
+mapArgument :: (MonadIO m)
+            => Argument                          -- ^ Argument to map
+            -> NameSpaceT m Argument             -- ^ Transformed or unchanged argument
+
+mapArgument (RawArg s) = case parsearg s of
+  Left _ -> return $ RawArg s
+  Right (n, p, b, d) -> do
+    ph <- nsEval p
+    return $ case d of
+      True -> RedirOut b n ph
+      False -> RedirIn n ph
+
+mapArgument z = return z
+
+parsearg :: String -> Either ParseError (String, FilePath, Bool, Bool)
+
+parsearg = parse prs ""
+
+prs :: CharParser () (String, FilePath, Bool, Bool)
+
+prs = do
+  n <- redname
+  (d, b) <- redangle
+  p <- redpath
+  return (n, p, b, d)
+
+redname = liftM2 (:) letter (many alphaNum)
+
+redangle = let gttru = char '>' >> return True
+           in      (char '<' >> return (False, False))
+               <|> (liftM2 (,) gttru (option False gttru))
+
+redpath = liftM2 (:) (oneOf "/#") (many (alphaNum <|> char '/'))
 
 -- | Given the 'appNsAdjust' field in the application descriptor, adjust the current
 -- namespace according to the list of 'RawBind' structures.

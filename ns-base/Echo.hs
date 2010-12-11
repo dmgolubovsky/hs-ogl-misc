@@ -15,6 +15,7 @@
 
 module Echo (app) where
 
+import System.IO9.Error
 import System.IO9.NameSpaceT
 import Data.Nesteratee
 
@@ -24,5 +25,5 @@ app = appEntry [("echo", echo)]
 
 echo :: Application IO
 
-echo args = nestText . nestBin
+echo args = nestText . nestLines . nestBin . nestYield Enoerror
 

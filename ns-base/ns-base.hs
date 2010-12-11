@@ -62,17 +62,20 @@ main = do
       Left s -> dbgPrint (show s) >> return ()
       Right tks -> do
       let app = appYaml $ loadYaml tks
-      res <- nsFork app $ (do
+      pgmres <- nsFork app $ (do
         appBind app
         aph <- nsEval (pgm iargs)
-        pgmtks <- readYaml ph
+        pgmtks <- readYaml aph
         when (isLeft pgmtks) $ throw $ fromLeft pgmtks
         let pgmapp = appYaml $ loadYaml $ fromRight pgmtks
-        appBind pgmapp
-        let sargs = map RawArg (pargs iargs)
-        nsBuiltIn pgmapp sargs) `nsCatch` return
-      dbgPrint $ show res
-      w <- nsWait True res
+        z <- nsFork pgmapp $ do
+          appBind pgmapp
+          sargs <- mapM mapArgument $ map RawArg (pargs iargs)
+          mapM (dbgPrint . show) sargs
+          nsBuiltIn pgmapp sargs
+        nsWait True z) `nsCatch` return
+      dbgPrint $ show pgmres
+      w <- nsWait True pgmres
       dbgPrint $ show w
 
 {-

@@ -129,10 +129,8 @@ instance Ord PathHandle where
 -- is up to the application to honor.
 
 data Argument = RawArg String                    -- ^ Raw argument (from parsed Yaml)
-              | TextArg T.Text                   -- ^ Arbitrary text
-              | OptArg Char T.Text               -- ^ Single-character option
-              | RedirIn T.Text PathHandle        -- ^ Input redirect
-              | RedirOut Bool T.Text PathHandle  -- ^ Output redirect
+              | RedirIn String PathHandle        -- ^ Input redirect
+              | RedirOut Bool String PathHandle  -- ^ Output redirect
                 deriving (Eq, Show)
 
 -- | Application descriptor. This data structure describes how to run an application,
