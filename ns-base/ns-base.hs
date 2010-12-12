@@ -68,10 +68,9 @@ main = do
         pgmtks <- readYaml aph
         when (isLeft pgmtks) $ throw $ fromLeft pgmtks
         let pgmapp = appYaml $ loadYaml $ fromRight pgmtks
+        sargs <- mapM mapArgument $ map RawArg (pargs iargs)
         z <- nsFork pgmapp $ do
           appBind pgmapp
-          sargs <- mapM mapArgument $ map RawArg (pargs iargs)
-          mapM (dbgPrint . show) sargs
           nsBuiltIn pgmapp sargs
         nsWait True z) `nsCatch` return
       dbgPrint $ show pgmres
