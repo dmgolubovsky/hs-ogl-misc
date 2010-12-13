@@ -20,7 +20,7 @@ build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.
                 transformers >= 0.2, stm >= 2.1, either-unwrap == 1.1, tuple >= 0.2,
                 enumerator >= 0.4.2, text >= 0.10.0.0.1, MonadCatchIO-transformers >= 0.2.2,
                 utf8-string >= 0.3.6, split >= 0.1.2, AbortT-transformers >= 1.0,
-                yaml-enumtok >= 0.1, parsec < 3.0
+                yaml-enumtok >= 0.1, parsec < 3.0, cmdargs >= 0.6.4
 
 extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 

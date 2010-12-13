@@ -24,6 +24,7 @@ module Data.Nesteratee (
  ,nestApp
  ,upStream
  ,downStream
+ ,endStream
  ,liftMB
  ,liftMI
 ) where
@@ -215,6 +216,20 @@ downStream abval dstr = do
     Error e -> liftMI $ throwError e
     Yield b _ -> lift (abort abval)
     Continue k -> put (k $ Chunks [dstr])
+
+-- | End the stream on behalf of the nested application body. The value provided
+-- will be returned as the result of the whole Iteratee stack. The Iteratee downstream
+-- will be sent EOF.
+
+endStream :: (Monad m) => b -> Nested i o m b ()
+
+endStream xval = do
+  iter <- get
+  ix <- liftMB $ runIteratee iter
+  case ix of
+    Error e -> liftMI $ throwError e
+    Yield b _ -> lift (abort xval)
+    Continue k -> put (k EOF) >> lift (abort xval)
 
 -- | Perform an action in the base monad of the 'Nesteratee'.
 

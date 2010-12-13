@@ -19,6 +19,9 @@ module System.IO9.Application (
  ,appDefaults
  ,appYaml
  ,appBind
+ ,appBodyT
+ ,appBodyB
+ ,appCmdArgs
  ,mapArgument
  ,AppDescr (..)
  ,AppMode (..)
@@ -33,10 +36,14 @@ import System.IO9.NameSpaceT
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Types
 import Control.Exception
+import Data.Data
 import Data.List
 import Data.Maybe
+import Data.Typeable
 import Data.Enumerator hiding (map, length)
 import Data.Nesteratee
+import System.Console.CmdArgs
+import System.Console.CmdArgs.Explicit
 import Text.Yaml.EnumTok
 import Text.Yaml.Loader
 import Control.Monad
@@ -126,6 +133,58 @@ appBind ad = case appNsAdjust ad of
     onebind rb | isJust $ rbFlag rb = nsBind (fromJust $ rbFlag rb) (rbNew rb) (rbOld rb)
     onebind _ = return ()
   _ -> return ()
+
+-- | A wrapper for an application's main function convenient to use with 'nestApp'.
+-- This wrapper is for applications whose stdin and stdout are 'T.Text' streams.
+
+appBodyT :: MonadIO m
+         => ([Argument] -> Nested T.Text T.Text (NameSpaceT m) NineError ())
+         -> Application m
+
+appBodyT body pargs =
+  nestText . nestLines . nestApp (body pargs) . nestBin
+
+-- | A wrapper like 'AppBodyT', but for applications with binary stdin and stdout.
+
+appBodyB :: MonadIO m
+         => ([Argument] -> Nested B.ByteString B.ByteString (NameSpaceT m) NineError ())
+         -> Application m
+
+appBodyB body pargs = nestApp (body pargs)
+
+-- | Process application's arguments, splitting them into redirections and
+-- command line options. Some of arguments may have been processed already
+-- by the parent process, and some may remain in the raw form. This function
+-- is intended to be used in applications with 'T.Text' stdin and stdout.
+-- If all applications arguments are parsed successfully, the filled arguments
+-- structure and list redirects will be returned. Otherwise a message will be
+-- sent to stdout, and application will terminate.
+
+appCmdArgs :: (MonadIO m, Data a)
+           => [Argument]                         -- ^ Arguments: some raw, some processed
+           -> a                                  -- ^ Application arguments descriptor
+           -> Nested T.Text T.Text (NameSpaceT m) NineError (a, [Argument])
+
+appCmdArgs pargs dargs = do
+  pargs' <- liftMB $ mapM mapArgument pargs
+  let redir (RedirIn _ _) = True
+      redir (RedirOut _ _ _) = True
+      redir _ = False
+      unraw (RawArg s) = [s]
+      unraw _ = []
+      (reds, cargs) = partition redir pargs'
+      mode = process (cmdArgsMode dargs) (concatMap unraw cargs)
+      mode' = case mode of
+        Left str -> Left str
+        Right ca | isJust (cmdArgsHelp ca) -> Left $ fromJust $ cmdArgsHelp ca
+        Right ca | isJust (cmdArgsVersion ca) -> Left $ fromJust $ cmdArgsVersion ca
+        Right ca -> Right $ cmdArgsValue ca
+  case mode' of
+    Left msg -> do
+      downStream Eio $ T.pack msg
+      endStream $ OtherError "arguments not parsed or help requested"
+      return (dargs, [])
+    Right ca -> return (ca, reds)
 
 -- | Default application settings (at least builtin name should be supplied).
 
