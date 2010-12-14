@@ -15,6 +15,7 @@
 
 module System.IO9.DevApps (
   devApps
+ ,Filter (..)
  ,Application (..)
  ,AppTable (..)
 ) where
@@ -31,23 +32,37 @@ import System.IO9.NameSpace.Util
 import System.IO9.NameSpace.Types
 import System.IO9.NameSpace.Monad
 import qualified Data.Map as M
+import qualified Data.Text as T
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as C
 
+-- | A general type for a filtering application.
 
--- | A general type for an embedded application. A typical application is a
+type Filter m t = [Argument]                     -- ^ Application arguments
+                -> Nesteratee t                  -- ^ Standard output
+                              t                  -- ^ Standard input
+                              (NameSpaceT m)     -- ^ Namespaced IO layer monad
+                              NineError          -- ^ Completion code ('EmptyStatus' if OK)
+
+
+-- | A general type for an embedded application. One kind of an application is a
 -- 'Nesteratee' which will be fed from a binary 'Enumerator' (standard input)
--- and will send its results to a binary 'Iteratee' (standard output). Standard
--- input and output will be provided by the parent process (or it will be /dev/cons
--- for the initial process). Other input and output channels are available via
+-- and will send its results to a binary 'Iteratee' (standard output). This kind
+-- of an application is basically a filter, and it may be binary or text-based.
+--
+-- Another kind of an application is just a monadic function evaluated at the
+-- 'NameSpaceT' level. Applications written this way have much more flexibility than
+-- filters, however they have to create 'Enumerators' and 'Iteratees' themselves.
+--
+-- Standard input and output will be provided by the parent process (or it will be 
+-- /dev/cons for the initial process). Other input and output channels are available via
 -- redirect arguments.
 
-type Application m = [Argument]                  -- ^ Application arguments
-                  -> Nesteratee B.ByteString     -- ^ Binary standard output
-                                B.ByteString     -- ^ Binary standard input
-                                (NameSpaceT m)   -- ^ Namespaced IO layer monad
-                                NineError        -- ^ Completion code ('Enoerror' if OK)
-
+data Application m = 
+    BinFilter (Filter m B.ByteString)            -- ^ Binary stream filter
+  | TextFilter (Filter m T.Text)                 -- ^ Text stream filter
+  | Monadic    ([Argument]                       -- ^ Aplication arguments
+             -> NameSpaceT m NineError)          -- ^ Returned value
 
 -- | Table of embedded applications to be provided when initializing the layer.
 

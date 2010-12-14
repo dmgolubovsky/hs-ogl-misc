@@ -40,6 +40,7 @@ module System.IO9.NameSpaceT (
  ,nsFinally
  ,nsStdIn
  ,nsStdOut
+ ,Filter (..)
  ,Application (..)
  ,AppTable (..)
  ,AppHandle
@@ -123,8 +124,17 @@ runBuiltIn :: (MonadIO m, C.MonadCatchIO m)
            -> NameSpaceT m NineError
 
 runBuiltIn aptb nbi args = case M.lookup nbi aptb of
-  Nothing -> return Enonexist
-  Just appf -> do
+  Nothing -> return $ Located nbi Enonexist
+  Just (Monadic appf) -> appf args
+  Just (TextFilter appf) -> do
+    appin <- nsStdIn
+    appout <- nsStdOut
+    nsWithText appout 0 $ \out -> do
+      r <- run (nsEnumText appin $$ appf args . nestYield EmptyStatus $ out)
+      case r of
+        Left err -> return $ Located nbi $ OtherError $ show err
+        Right res -> return res
+  Just (BinFilter appf) -> do
     appin <- nsStdIn
     appout <- nsStdOut
     nsWithBin appout 0 $ \out -> do
@@ -398,4 +408,4 @@ appTable = M.unions
 
 appEntry :: (Monad m) => [(FilePath, Application m)] -> AppTable m
 
-appEntry = M.fromList
+appEntry = M.fromList . filter (not . null . fst)

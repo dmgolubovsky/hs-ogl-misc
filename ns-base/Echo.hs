@@ -29,7 +29,7 @@ import Data.Text (pack)
 
 app :: (MonadIO m) => AppTable m
 
-app = appEntry [("echo", echo)]
+app = appEntry [("echo", TextFilter echo)]
 
 data EchoArgs = EchoArgs {
   n :: Bool

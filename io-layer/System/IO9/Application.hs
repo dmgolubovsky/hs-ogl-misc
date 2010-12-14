@@ -139,16 +139,15 @@ appBind ad = case appNsAdjust ad of
 
 appBodyT :: MonadIO m
          => ([Argument] -> Nested T.Text T.Text (NameSpaceT m) NineError ())
-         -> Application m
+         -> Filter m T.Text
 
-appBodyT body pargs =
-  nestText . nestLines . nestApp (body pargs) . nestBin
+appBodyT body pargs = nestApp (body pargs)
 
 -- | A wrapper like 'AppBodyT', but for applications with binary stdin and stdout.
 
 appBodyB :: MonadIO m
          => ([Argument] -> Nested B.ByteString B.ByteString (NameSpaceT m) NineError ())
-         -> Application m
+         -> Filter m B.ByteString
 
 appBodyB body pargs = nestApp (body pargs)
 
