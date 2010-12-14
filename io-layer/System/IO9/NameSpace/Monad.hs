@@ -15,6 +15,7 @@
 
 module System.IO9.NameSpace.Monad (
   NameSpaceT (..)
+ ,nsThrow
  ,nsCatch
  ,nsFinally
 ) where
@@ -23,7 +24,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 import qualified Control.Monad.CatchIO as C
-import Control.Exception (ErrorCall)
+import Control.Exception (ErrorCall, throwIO)
 import System.IO.Error
 import System.IO9.Error
 import System.IO9.NameSpace.Types
@@ -34,6 +35,14 @@ instance (MonadIO m) => Monad (NameSpaceT m) where
     return = NameSpaceT . return
     m >>= k = NameSpaceT $ runNameSpaceT . k =<< runNameSpaceT m
     fail msg = NameSpaceT $ fail msg
+
+-- | Throw a 'NineError'.
+
+nsThrow :: (MonadIO m)
+        => NineError
+        -> NameSpaceT m a
+
+nsThrow = NameSpaceT . liftIO . throwIO
 
 -- | Catch an error occurred during a namespaced operation, and
 -- convert into 'NineError' where possible, otherwise just report

@@ -21,7 +21,7 @@ module Data.Nesteratee (
  ,nestYield
  ,iterFinal
  ,Nested (..)
- ,nestApp
+ ,nestFilter
  ,upStream
  ,downStream
  ,endStream
@@ -179,11 +179,11 @@ type Nested i o m b a = StateT (Iteratee i m b) (AbortT b (Iteratee o m)) a
 -- the inner 'Iteratee' yields a value prematurely, the nested application program
 -- will be aborted. 
 
-nestApp :: (Monad m)
-        => Nested i o m b ()
-        -> Nesteratee i o m b
+nestFilter :: (Monad m)
+           => Nested i o m b ()
+           -> Nesteratee i o m b
   
-nestApp body iter = do
+nestFilter body iter = do
   ew <- unwrapAbortT (runStateT body iter)
   case ew of
     Left b -> yield b EOF

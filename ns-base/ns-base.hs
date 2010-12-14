@@ -73,74 +73,7 @@ main = do
           appBind pgmapp
           nsBuiltIn pgmapp sargs
         nsWait True z) `nsCatch` return
-      dbgPrint $ show pgmres
       w <- nsWait True pgmres
       dbgPrint $ show w
 
-{-
-
-data EchoArgs = EchoArgs {
-  n :: Bool
- ,e :: Bool
- ,s :: [String]
-} deriving (Data, Typeable, Show)
-
-main = do
-  argsx <- getArgs
-  dev <- devHost [(rootdir, "/")]
-  when (null argsx) $ fail "Need at least one argument"
-  let init = head argsx
-  nsInit NsBase.apps [dev] $ do
-    nsBind BindRepl "#Z" "/"
-    ph <- nsEval init
-    (Right tks) <- readYaml ph
-    let app = appYaml $ loadYaml tks
-    appBind app
-    let ech = EchoArgs {
-                n = def &= help "do not output the trailing newline"
-               ,e = def &= help "enable interpretation of backslash escapes"
-               ,s = def &= args &= typ "STRING"
-              } &= program "echo"
-    let mode = cmdArgsMode ech
-    dbgPrint $ show mode
-    let ea = process mode argsx
-    dbgPrint $ show ea
-
--}
-{-
-  let app = head (argsx ++ ["/"])
-  nsInit NsBase.apps [dev] $ do
-    nsBind BindRepl "#Z" "/"
-    nsBind (BindAfter False) "#c" "/dev"
-    nsBind (BindAfter False) "#α" "/bin"
-    let ech = EchoArgs {
-                n = def &= help "do not output the trailing newline"
-               ,e = def &= help "enable interpretation of backslash escapes"
-               ,s = def &= args &= typ "STRING"
-              } &= program "echo"
-    let mode = cmdArgsMode ech
-    dbgPrint $ show mode
-    let ea = process mode argsx
-    dbgPrint $ show ea
-    ph <- nsEval app
-    (Right tks) <- readYaml ph
-    dbgPrint $ show tks
-    let ly = loadYaml tks
-    dbgPrint $ show $ ly
-    dbgPrint $ show $ appYaml ly
--}
-
-procYaml :: Nesteratee Token B.ByteString (NameSpaceT IO) ([Token])
-
-procYaml = nestText . nestYaml []
-
-{-
-    ph <- nsEval app
-    con <- nsEval "/dev/cons"
-    (Right tks) <- readYaml ph
-    dbgPrint $ show tks
-    let ly = loadYaml tks
-    dbgPrint $ show $ ly
-    dbgPrint $ show $ appYaml ly
--}
 

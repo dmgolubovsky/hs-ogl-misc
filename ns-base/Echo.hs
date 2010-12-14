@@ -25,7 +25,7 @@ import System.Console.CmdArgs
 import Data.List
 import Data.Maybe
 import Data.Nesteratee
-import Data.Text (pack)
+import Data.Text (Text, pack)
 
 app :: (MonadIO m) => AppTable m
 
@@ -36,10 +36,10 @@ data EchoArgs = EchoArgs {
  ,s :: [String]
 } deriving (Data, Typeable, Show)
 
-echo :: (MonadIO m) => Application m
+echo :: (MonadIO m) => Filter m Text
 
 echo = appBodyT $ \pargs -> do
-  (ech, reds) <- appCmdArgs pargs $ EchoArgs {
+  (ech, reds) <- liftMB $ appCmdArgs pargs $ EchoArgs {
         n = False &= help "do not append the newline character"
        ,s = def &= args &= typ "Arg"
       } &= program "echo" &= summary "echo: print arguments" &= versionArg [ignore]

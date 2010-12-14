@@ -36,6 +36,7 @@ module System.IO9.NameSpaceT (
  ,nsEnumText
  ,nsEnumBin
  ,nsEnumDir
+ ,nsThrow
  ,nsCatch
  ,nsFinally
  ,nsStdIn
@@ -241,7 +242,7 @@ nsFork ad thr = do
                ,stdoutp = appoutph
               }
           (runNameSpaceT thr `runReaderT` newenv >>= liftIO . putMVar mvwait) `C.catches`
-            [ C.Handler (liftIO . putMVar mvwait . Located "unhandled")
+            [ C.Handler (liftIO . putMVar mvwait)
              ,C.Handler (\(e :: SomeException) -> liftIO $ putMVar mvwait $ OtherError $ show e)]
         return $ AppRunning child mvwait
 

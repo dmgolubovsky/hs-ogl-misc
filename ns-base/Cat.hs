@@ -27,7 +27,7 @@ import Data.Text (pack)
 
 app :: (MonadIO m) => AppTable m
 
-app = appEntry [("cat", BinFilter cat)]
+app = appEntry [("cat", Monadic cat)]
 
 -- cat ignores any redirection arguments and treats everything else as filenames
 -- (hence no options).
