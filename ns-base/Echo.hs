@@ -13,8 +13,6 @@
 -- echo: print text arguments to the standard output iteratee.
 ------------------------------------------------------------------
 
-{-# Language DeriveDataTypeable #-}
-
 module Echo (app) where
 
 import System.IO9.Error

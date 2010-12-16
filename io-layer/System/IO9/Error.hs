@@ -24,6 +24,7 @@ import Control.Exception
 data NineError = OtherError String
  | Located String NineError
  | EmptyStatus
+ | CompletedMsg String
  | StillRunning
  | Enoerror	-- ^ no error
  | Emount	-- ^ inconsistent mount
@@ -82,6 +83,7 @@ data NineError = OtherError String
 
 instance Show NineError where
   show (OtherError s) = s
+  show (CompletedMsg s) = s
   show (Located s e) = s ++ ": " ++ show e
   show (EmptyStatus) = ""
   show (StillRunning) = "Still running"

@@ -156,7 +156,7 @@ appBodyB body pargs = nestFilter (body pargs)
 -- by the parent process, and some may remain in the raw form. This function
 -- is intended to be used in applications with 'T.Text' stdin and stdout.
 -- If all applications arguments are parsed successfully, the filled arguments
--- structure and list redirects will be returned. Otherwise an exception ('OtherError') 
+-- structure and list redirects will be returned. Otherwise an exception ('CompletedMsg') 
 -- with message text will be thrown.
 
 appCmdArgs :: (MonadIO m, Data a)
@@ -179,7 +179,7 @@ appCmdArgs pargs dargs = do
         Right ca | isJust (cmdArgsVersion ca) -> Left $ fromJust $ cmdArgsVersion ca
         Right ca -> Right $ cmdArgsValue ca
   case mode' of
-    Left msg -> nsThrow $ OtherError msg
+    Left msg -> nsThrow $ CompletedMsg msg
     Right ca -> return (ca, reds)
 
 -- | Default application settings (at least builtin name should be supplied).
