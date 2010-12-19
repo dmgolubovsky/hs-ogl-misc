@@ -25,7 +25,6 @@ import Data.List
 import Data.Maybe
 import Data.NineP.Bits
 import Data.Nesteratee
-import Data.Text (pack)
 import Data.Enumerator (run, ($$))
 
 app :: (MonadIO m, MonadCatchIO m) => AppTable m
@@ -45,7 +44,7 @@ cat pargs = do
   (cas, reds) <- appCmdArgs pargs $ CatArgs {
         s = def &= args &= typ "Files"
       } &= program "cat" &= summary "cat: concatenate files" &= 
-           versionArg [ignore] &= helpArg [ignore]
+           versionArg [ignore]
   phlist <- case s cas of
     [] -> mapM arg2ph ["-"]
     _ -> mapM arg2ph $ s cas

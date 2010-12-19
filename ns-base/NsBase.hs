@@ -18,8 +18,9 @@ module NsBase (apps) where
 import System.IO9.NameSpaceT
 import Echo
 import Cat
+import Ls
 
 apps :: AppTable IO
 
-apps = appTable [Echo.app, Cat.app]
+apps = appTable [Echo.app, Cat.app, Ls.app]
 
