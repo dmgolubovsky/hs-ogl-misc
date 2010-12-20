@@ -17,12 +17,15 @@ module Ls (app) where
 
 import Numeric
 import System.IO9.Error
+import System.FilePath
 import System.IO9.NameSpaceT
 import System.IO9.Application
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.CatchIO
 import System.Console.CmdArgs
 import Text.PrettyPrint
+import Data.Text (pack)
 import Data.Bits
 import Data.List
 import Data.Maybe
@@ -30,7 +33,7 @@ import Data.NineP
 import Data.NineP.Bits
 import Data.NineP.Posix
 import Data.Nesteratee
-import Data.Enumerator (run, ($$))
+import Data.Enumerator (run, consume, (==<<), enumList)
 
 app :: (MonadIO m, MonadCatchIO m) => AppTable m
 
@@ -77,8 +80,37 @@ ls pargs = do
                                                   "if they contain special characters.")
        ,files = def &= args &= typ "Files"
      } &= program "ls" &= summary "ls: list contents of directory" &= versionArg [ignore]
+  appout <- nsStdOut
+  nsWithText appout c_OTRUNC $ \out ->
+    forM (files cas) $ \f -> do
+      prt <- stats cas f >>= return . pack . prettyPrint cas
+      run (enumList 1024 [prt] ==<< out)
   return EmptyStatus
 
+-- Collect Stat structures for a single argument.
+
+stats :: (MonadIO m, MonadCatchIO m) => LsArgs -> FilePath -> NameSpaceT m [Stat]
+
+stats lsa fp = do
+  ph <- nsEval fp
+  st <- nsStat ph
+  let isdir zs = (qid_typ $ st_qid zs) .&. c_QTDIR /= 0
+  case isdir st of
+    False -> return [fxn lsa fp st]
+    True | d lsa -> return [fxn lsa fp st]
+    True -> do
+      ests <- run (nsEnumDir ph ==<< consume)
+      case ests of
+        Left err -> nsThrow $ Located (show ph) $ OtherError (show err)
+        Right sts | p lsa -> return sts
+        Right sts -> return $ map (\st -> st {st_name = fp </> st_name st}) sts
+      
+-- Fix the file name shown: if the p flag in lsa is false, substitute the full path
+-- in the st_name field of Stat.
+
+fxn lsa fp st | p lsa = st
+
+fxn lsa fp st = st {st_name = fp}
 
 -- Pretty print the Stat structure.
 
@@ -99,7 +131,7 @@ prStat lsa st = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <+> sl
     sizek = opt s $ int $ fromIntegral (st_length st `div` 1024)
     ulmod = opt m $ lbrack <> text (st_muid st) <> rbrack
     fqid = opt q $ lparen <> (hex $ qid_path $ st_qid st) <+>
-                             (hex $ qid_vers $ st_qid st) <+>
+                             (int $ fromIntegral $ qid_vers $ st_qid st) <+>
                              (hex $ qtp) <> rparen
     tempf = opt oT $ if qtp .&. c_QTTMP /= 0 then text "t" 
                                              else text "-"
