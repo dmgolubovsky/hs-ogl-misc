@@ -14,7 +14,7 @@ build-depends:  base >= 4.0 && < 5.0, nsio-layer >= 0.1, containers >= 0.3,
                 yaml-enumtok >= 0.1, dlist >= 0.5, filepath >= 1.1, enumerator >= 0.4.2,
                 utf8-string >= 0.3.6, bytestring >= 0.9.1.7, text >= 0.10.0.0.1,
                 cmdargs >= 0.6.4, either-unwrap >= 1.1, transformers >= 0.2.2,
-                MonadCatchIO-transformers >= 0.2.2, pretty >= 1.0, NineP >= 0.0.2
+                MonadCatchIO-transformers >= 0.2.2, pretty >= 1.0, NineP >= 0.0.2, boxes >= 0.1
 
 
 executable:     ns-base

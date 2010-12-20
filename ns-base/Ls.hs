@@ -24,7 +24,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.CatchIO
 import System.Console.CmdArgs
-import Text.PrettyPrint
+import Text.PrettyPrint.Boxes
 import Data.Text (pack)
 import Data.Bits
 import Data.List
@@ -118,27 +118,34 @@ prettyPrint :: LsArgs -> [Stat] -> String
 
 prettyPrint lsa = render . prStats lsa
 
-prStats lsa = vcat . map (prStat lsa)
-
-prStat lsa st = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <+> slash
+prStats lsa sts = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <> slash
   where 
-    opt zz xx = if zz lsa then xx else empty
-    qtp = qid_typ $ st_qid st
+    opt zz xx = if zz lsa then xx else nullBox
+    mkbox al fld strs = let txts = map fld strs
+                            txti = map text txts
+                        in  vcat al txti
+    qtp = qid_typ . st_qid
     xbits = (c_DMEXEC `shiftL` oShift) .|.
             (c_DMEXEC `shiftL` gShift) .|.
             (c_DMEXEC `shiftL` wShift)
-    hex x = text (showHex x "")
-    sizek = opt s $ int $ fromIntegral (st_length st `div` 1024)
-    ulmod = opt m $ lbrack <> text (st_muid st) <> rbrack
-    fqid = opt q $ lparen <> (hex $ qid_path $ st_qid st) <+>
-                             (int $ fromIntegral $ qid_vers $ st_qid st) <+>
-                             (hex $ qtp) <> rparen
-    tempf = opt oT $ if qtp .&. c_QTTMP /= 0 then text "t" 
-                                             else text "-"
-    longinfo = empty -- !!!!!!!!!!NB!!!!!!!!!
-    fpath = text (st_name st)
-    slash = opt oF $ if qtp .&. c_QTDIR /= 0
-                       then text "/"
-                       else if st_mode st .&. xbits /= 0 then text "*"
-                                                         else empty
+    hex x = showHex x ""
+    sizek = opt s $ mkbox right (show . (`div` 1024) . st_length) sts
+    ulmod = opt m $ mkbox left (\st -> "[" ++ st_muid st ++ "]") sts
+    fqid = opt q (qpath <+> qvers <+> qtyp)
+    qpath = mkbox left (hex . qid_path . st_qid) sts
+    qvers = mkbox right (show . qid_vers . st_qid) sts
+    qtyp = mkbox right (hex . qtp) sts
+
+{-
+    fqid = opt q $ mkbox left (\st -> "(" ++ (hex $ qid_path $ st_qid st) ++ " " ++
+                                             (show $ qid_vers $ st_qid st) ++ " " ++
+                                             (hex $ qtp st) ++ ")") sts
+-}
+    tempf = opt oT $ mkbox left (\st -> if qtp st .&. c_QTTMP /= 0 then "t" else "-") sts
+    longinfo = nullBox -- !!!!!!!!!!NB!!!!!!!!!
+    fpath = mkbox left st_name sts
+    slash = opt oF $ mkbox left (\st -> if qtp st .&. c_QTDIR /= 0
+                                           then "/"
+                                           else if st_mode st .&. xbits /= 0 then "*"
+                                                                             else " ") sts
     
