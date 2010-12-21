@@ -26,6 +26,7 @@ import Control.Monad.CatchIO
 import System.Console.CmdArgs
 import Text.PrettyPrint.Boxes
 import Data.Text (pack)
+import Data.Char
 import Data.Bits
 import Data.List
 import Data.Maybe
@@ -128,21 +129,27 @@ prStats lsa sts = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <> s
     xbits = (c_DMEXEC `shiftL` oShift) .|.
             (c_DMEXEC `shiftL` gShift) .|.
             (c_DMEXEC `shiftL` wShift)
-    hex x = showHex x ""
+    hex n x = let s = showHex x "" in replicate (n - length s) '0' ++ s
     sizek = opt s $ mkbox right (show . (`div` 1024) . st_length) sts
     ulmod = opt m $ mkbox left (\st -> "[" ++ st_muid st ++ "]") sts
-    fqid = opt q (qpath <+> qvers <+> qtyp)
-    qpath = mkbox left (hex . qid_path . st_qid) sts
+    cbox al = mkbox al . const
+    fqid = opt q (cbox left "(" sts <> qpath <+> qvers <+> qtyp <> cbox right ")" sts)
+    qpath = mkbox left (hex 16 . qid_path . st_qid) sts
     qvers = mkbox right (show . qid_vers . st_qid) sts
-    qtyp = mkbox right (hex . qtp) sts
-
-{-
-    fqid = opt q $ mkbox left (\st -> "(" ++ (hex $ qid_path $ st_qid st) ++ " " ++
-                                             (show $ qid_vers $ st_qid st) ++ " " ++
-                                             (hex $ qtp st) ++ ")") sts
--}
+    qtyp = mkbox right (hex 2 . qtp) sts
     tempf = opt oT $ mkbox left (\st -> if qtp st .&. c_QTTMP /= 0 then "t" else "-") sts
-    longinfo = nullBox -- !!!!!!!!!!NB!!!!!!!!!
+    longinfo = opt l (perms <+> dev <+> dtyp)
+    dev = mkbox left ((:[]) . chr . fromIntegral . st_typ) sts
+    dtyp = mkbox right (show . st_dev) sts
+    perms = bdir <> bexcl <> bperm oShift <> bperm gShift <> bperm wShift
+    bdir = mkbox left (\st -> case 0 of _ | st_mode st .&. c_DMDIR /= 0 -> "d"
+                                          | st_mode st .&. c_DMAPPEND /= 0 -> "a"
+                                          | otherwise -> "-") sts
+    bb b s = mkbox left (\st -> if st_mode st .&. b /=0 then s else "-") sts
+    bexcl = bb c_DMEXCL "l"
+    bperm s = bb (c_DMREAD `shiftL` s) "r"  <>
+              bb (c_DMWRITE `shiftL` s) "w" <>
+              bb (c_DMEXEC `shiftL` s) "x"
     fpath = mkbox left st_name sts
     slash = opt oF $ mkbox left (\st -> if qtp st .&. c_QTDIR /= 0
                                            then "/"
