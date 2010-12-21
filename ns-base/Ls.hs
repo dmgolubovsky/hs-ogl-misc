@@ -119,9 +119,9 @@ prettyPrint :: LsArgs -> [Stat] -> String
 
 prettyPrint lsa = render . prStats lsa
 
-prStats lsa sts = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <> slash
+prStats lsa sts = sizek <> ulmod <> fqid <> tempf <> longinfo <> fpath <> slash
   where 
-    opt zz xx = if zz lsa then xx else nullBox
+    opt zz xx = if zz lsa then (xx <+> nullBox) else nullBox
     mkbox al fld strs = let txts = map fld strs
                             txti = map text txts
                         in  vcat al txti
@@ -130,17 +130,22 @@ prStats lsa sts = sizek <+> ulmod <+> fqid <+> tempf <+> longinfo <+> fpath <> s
             (c_DMEXEC `shiftL` gShift) .|.
             (c_DMEXEC `shiftL` wShift)
     hex n x = let s = showHex x "" in replicate (n - length s) '0' ++ s
+    qempty r "" = "'" ++ r ++ "'"
+    qempty _ s = s
     sizek = opt s $ mkbox right (show . (`div` 1024) . st_length) sts
-    ulmod = opt m $ mkbox left (\st -> "[" ++ st_muid st ++ "]") sts
+    ulmod = opt m $ mkbox left (\st -> "[" ++ qempty "" (st_muid st) ++ "]") sts
     cbox al = mkbox al . const
     fqid = opt q (cbox left "(" sts <> qpath <+> qvers <+> qtyp <> cbox right ")" sts)
     qpath = mkbox left (hex 16 . qid_path . st_qid) sts
     qvers = mkbox right (show . qid_vers . st_qid) sts
     qtyp = mkbox right (hex 2 . qtp) sts
     tempf = opt oT $ mkbox left (\st -> if qtp st .&. c_QTTMP /= 0 then "t" else "-") sts
-    longinfo = opt l (perms <+> dev <+> dtyp)
+    longinfo = opt l (perms <+> dev <+> dtyp <+> uid <+> gid <+> flen)
     dev = mkbox left ((:[]) . chr . fromIntegral . st_typ) sts
     dtyp = mkbox right (show . st_dev) sts
+    uid = mkbox left (qempty "?" . st_uid) sts
+    gid = mkbox left (qempty "?" . st_gid) sts
+    flen = mkbox right (show . st_length) sts
     perms = bdir <> bexcl <> bperm oShift <> bperm gShift <> bperm wShift
     bdir = mkbox left (\st -> case 0 of _ | st_mode st .&. c_DMDIR /= 0 -> "d"
                                           | st_mode st .&. c_DMAPPEND /= 0 -> "a"
