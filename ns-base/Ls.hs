@@ -16,6 +16,7 @@
 module Ls (app) where
 
 import Numeric
+import System.Locale
 import System.IO9.Error
 import System.FilePath
 import System.IO9.NameSpaceT
@@ -34,6 +35,8 @@ import Data.NineP
 import Data.NineP.Bits
 import Data.NineP.Posix
 import Data.Nesteratee
+import Data.Time.Format
+import Data.Time.Clock.POSIX
 import Data.Enumerator (run, consume, (==<<), enumList)
 
 app :: (MonadIO m, MonadCatchIO m) => AppTable m
@@ -140,12 +143,16 @@ prStats lsa sts = sizek <> ulmod <> fqid <> tempf <> longinfo <> fpath <> slash
     qvers = mkbox right (show . qid_vers . st_qid) sts
     qtyp = mkbox right (hex 2 . qtp) sts
     tempf = opt oT $ mkbox left (\st -> if qtp st .&. c_QTTMP /= 0 then "t" else "-") sts
-    longinfo = opt l (perms <+> dev <+> dtyp <+> uid <+> gid <+> flen)
+    longinfo = opt l (perms <+> dev <+> dtyp <+> uid <+> gid <+> flen <+> ftime)
     dev = mkbox left ((:[]) . chr . fromIntegral . st_typ) sts
     dtyp = mkbox right (show . st_dev) sts
     uid = mkbox left (qempty "?" . st_uid) sts
     gid = mkbox left (qempty "?" . st_gid) sts
     flen = mkbox right (show . st_length) sts
+    timefld = if u lsa then st_atime else st_mtime
+    ftime = mkbox right (formatTime defaultTimeLocale "%x" . 
+                                    posixSecondsToUTCTime . 
+                                    realToFrac . timefld) sts
     perms = bdir <> bexcl <> bperm oShift <> bperm gShift <> bperm wShift
     bdir = mkbox left (\st -> case 0 of _ | st_mode st .&. c_DMDIR /= 0 -> "d"
                                           | st_mode st .&. c_DMAPPEND /= 0 -> "a"
