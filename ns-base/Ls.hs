@@ -87,9 +87,23 @@ ls pargs = do
   appout <- nsStdOut
   nsWithText appout c_OTRUNC $ \out ->
     forM (files cas) $ \f -> do
-      prt <- stats cas f >>= return . pack . prettyPrint cas
+      prt <- stats cas f >>= return . pack . prettyPrint cas . dirsort cas
       run (enumList 1024 [prt] ==<< out)
   return EmptyStatus
+
+-- Sort the directory entries.
+
+dirsort :: LsArgs -> [Stat] -> [Stat]
+
+dirsort lsa ds | n lsa = ds
+
+dirsort lsa ds | r lsa = reverse $ dirsort lsa {r = False} ds
+
+dirsort lsa ds | t lsa = sortBy (\x y -> compare (st_mtime x) (st_mtime y)) ds
+
+dirsort lsa ds | t lsa && u lsa = sortBy (\x y -> compare (st_atime x) (st_atime y)) ds
+
+dirsort lsa ds = sortBy (\x y -> compare (st_name x) (st_name y)) ds 
 
 -- Collect Stat structures for a single argument.
 
@@ -150,7 +164,9 @@ prStats lsa sts = sizek <> ulmod <> fqid <> tempf <> longinfo <> fpath <> slash
     gid = mkbox left (qempty "?" . st_gid) sts
     flen = mkbox right (show . st_length) sts
     timefld = if u lsa then st_atime else st_mtime
-    ftime = mkbox right (formatTime defaultTimeLocale "%x" . 
+    fmt1 = "%b %e %G"
+    fmt2 = "%b %e %R"
+    ftime = mkbox right (formatTime defaultTimeLocale fmt2 . 
                                     posixSecondsToUTCTime . 
                                     realToFrac . timefld) sts
     perms = bdir <> bexcl <> bperm oShift <> bperm gShift <> bperm wShift
