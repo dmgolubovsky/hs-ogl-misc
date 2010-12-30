@@ -44,7 +44,7 @@ findShape gst mx my = do
         (s:_) -> gst {focus = Just s}
   return $ gst' {nredraw = True}
 
-redraw gst = do
+redraw gst x y = do
   let polycmp s1 s2 = shape s1 == shape s2
       edgecmp s1 s2 = compare (edgn s1) (edgn s2)
       polys = map (sortBy edgecmp) (polycmp `groupBy` (concatMap S.elems $ M.elems $ edges gst))

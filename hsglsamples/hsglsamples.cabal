@@ -8,7 +8,7 @@ description:
     Example programs for GLFW+GL+Haskell
 build-type:     Simple
 build-depends:  base >= 4.0, containers >= 0.3.0.0, glfwapp >= 0.1, shapes2d >= 0.1,
-                xml >= 1.3.7, utf8-string >= 0.3.6, bytestring >= 0.9, nsio-layer >= 0.1,
+                xml >= 1.3.7, utf8-string >= 0.3.6, bytestring >= 0.9,
                 directory >= 1.0.1.0, filepath >= 1.1, dlist >= 0.5,
                 split >= 0.1.2, NineP == 0.0.2, enumerator >= 0.4.1, text >= 0.9,
                 transformers >= 0.2, MonadCatchIO-transformers >= 0.2.2
@@ -16,23 +16,27 @@ build-depends:  base >= 4.0, containers >= 0.3.0.0, glfwapp >= 0.1, shapes2d >= 
 executable:     shrelclicks
 main-is:        shrelclicks.hs
 extra-libraries: GL, GLU, Xrandr
+ghc-options:    -threaded
+
+executable:     twovps
+main-is:        twovps.hs
+extra-libraries: GL, GLU, Xrandr
+extensions:     ScopedTypeVariables
+ghc-options:    -threaded
 
 executable:     shclicks
 main-is:        shclicks.hs
 extra-libraries: GL, GLU, Xrandr
+ghc-options:    -threaded
 
 executable:     glviewer
 main-is:        glviewer.hs
 extra-libraries: GL, GLU, Xrandr
+ghc-options:    -threaded
 
 executable:     svgscn
 main-is:        svgscn.hs
 extra-libraries: GL, GLU, Xrandr
-
-executable:     nsexample
-main-is:        nsexample.hs
-
-executable:     enumtest
-main-is:        enumtest.hs
+ghc-options:    -threaded
 
 

@@ -59,8 +59,8 @@ class GLFWAppData app where
   eventHandler app e = return app
   needRedraw :: app -> Bool
   needRedraw app = False
-  redrawProc :: app -> IO ()
-  redrawProc app = return ()
+  redrawProc :: app -> Int -> Int -> IO ()
+  redrawProc app x y = return ()
   doneRedraw :: app -> app
   doneRedraw = id
   reshapeProc :: app -> Int -> Int  -> IO ()
@@ -180,28 +180,28 @@ glfwMain app gst = do
   w_glfwSetMousePosCallback_1 (mpcb ch) >>= f_glfwSetMousePosCallback
   initProc gst
   writeChan ch WindowRefresh
-  mainLoop ch gst where
-    mainLoop ch gst = do
+  mainLoop ch gst (winWidth app) (winHeight app) where
+    mainLoop ch gst wx wy = do
       ec <- isEmptyChan ch
       case ec of
-        True -> f_glfwWaitEvents >> mainLoop ch gst
+        True -> f_glfwWaitEvents >> mainLoop ch gst wx wy
         False -> do
-          (f, e) <- readChan ch >>= \e' -> case e' of
-            WindowSize x y -> reshapeProc gst x y >> return (False, e')
-            WindowRefresh -> return (True, e')
+          (f, e, nx, ny) <- readChan ch >>= \e' -> case e' of
+            WindowSize x y -> reshapeProc gst x y >> return (False, e', x, y)
+            WindowRefresh -> return (True, e', wx, wy)
             WindowClose -> do
               eventHandler gst WindowClose
               f_glfwTerminate
               exitWith ExitSuccess
-            _ -> return (False, e')
+            _ -> return (False, e', wx, wy)
           gst' <- eventHandler gst e
           mapM_ (writeChan ch) (postedEvents gst')
           case f || needRedraw gst' of
             True -> do
-              redrawProc gst'
+              redrawProc gst' nx ny
               f_glfwSwapBuffers
-              mainLoop ch (doneRedraw gst')
-            False -> mainLoop ch gst'
+              mainLoop ch (doneRedraw gst') nx ny
+            False -> mainLoop ch gst' nx ny
           
 
                         

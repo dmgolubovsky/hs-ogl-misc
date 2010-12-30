@@ -40,9 +40,9 @@ main = do
                ,fp = fname
                ,texture = Nothing}
 
-redraw VWR {texture = Nothing} = return ()
+redraw VWR {texture = Nothing} x y = return ()
 
-redraw gst@VWR {texture = Just txr} = do
+redraw gst@VWR {texture = Just txr} x y = do
    wrect <- winRect
    let rect = Rect {rectOrig = Point 0 0
                    ,rectWdt = imgWidth txr

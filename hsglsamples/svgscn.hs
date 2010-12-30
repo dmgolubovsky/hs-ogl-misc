@@ -91,7 +91,7 @@ drawEdge e = do
 
 instance GLFWAppData SVGScene where
   reshapeProc = reshape
-  redrawProc scn = scHandler scn scn ScRedraw >> return ()
+  redrawProc scn x y = scHandler scn scn ScRedraw >> return ()
   eventHandler scn e = scHandler scn scn (ScEvent e)
 
 reshape scn x y = do
