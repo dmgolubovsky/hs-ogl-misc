@@ -96,8 +96,8 @@ mapArgument (RawArg s) = case parsearg s of
   Right (n, p, b, d) -> do
     ph <- nsEval p
     return $ case d of
-      True -> RedirOut b n ph
-      False -> RedirIn n ph
+      True -> RedirOut b n ph {phAdvisory = AdviceWrite}
+      False -> RedirIn n ph {phAdvisory = AdviceRead}
 
 mapArgument z = return z
 

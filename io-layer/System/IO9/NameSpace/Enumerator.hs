@@ -57,12 +57,15 @@ import qualified Data.Text.Encoding as E
 
 -- | Open an 'Iteratee' on a binary file for the given path handle, use it, and close the handle
 -- afterwards.
+-- The path handle must have its advisory mode 'AdviceAny' or 'AdviceWrite'
   
 nsWithBin  :: (MonadIO m, C.MonadCatchIO m)
            => PathHandle                  -- ^ Handle to iterate over
            -> Word8                       -- ^ Open mode (only c_OTRUNC is meaningful)
            -> (Iteratee B.ByteString (NameSpaceT m) () -> NameSpaceT m x)
            -> NameSpaceT m x
+
+nsWithBin  PathHandle {phAdvisory = AdviceRead} _ _ = nsThrow Ebadspec
 
 nsWithBin  ph om k = do
   h <- NameSpaceT $ liftIO $ do
@@ -75,12 +78,15 @@ nsWithBin  ph om k = do
 
 -- | Open a 'T.Text' 'Iteratee' for the given path handle, use it, and close the handle
 -- afterwards.
+-- The path handle must have its advisory mode 'AdviceAny' or 'AdviceWrite'
   
 nsWithText :: (MonadIO m, C.MonadCatchIO m)
            => PathHandle                  -- ^ Handle to iterate over
            -> Word8                       -- ^ Open mode (only c_OTRUNC is meaningful)
            -> (Iteratee T.Text (NameSpaceT m) () -> NameSpaceT m x)
            -> NameSpaceT m x
+
+nsWithText PathHandle {phAdvisory = AdviceRead} _ _ = nsThrow Ebadspec
 
 nsWithText ph om k = do
   h <- NameSpaceT $ liftIO $ do
@@ -102,11 +108,14 @@ liftIter iter = Iteratee $ do
 		Continue k -> Continue (liftIter . k)
 
 -- | Open a binary 'Enumerator' for the given path handle.
+-- The path handle must have its advisory mode 'AdviceAny' or 'AdviceRead'
 
 nsEnumBin  :: (MonadIO m, C.MonadCatchIO m)
            => Integer                     -- ^ Buffer size
            -> PathHandle                  -- ^ Handle to enumerate
            -> Enumerator B.ByteString (NameSpaceT m) b
+
+nsEnumBin  _ PathHandle {phAdvisory = AdviceWrite} _ = throwError Ebadspec
 
 nsEnumBin  n ph s =
   Iteratee io where
@@ -132,10 +141,13 @@ nsEnumBin  n ph s =
           else return B.empty
 
 -- | Open a 'T.Text' 'Enumerator' for the given path handle.
+-- The path handle must have its advisory mode 'AdviceAny' or 'AdviceRead'
 
 nsEnumText :: (MonadIO m, C.MonadCatchIO m)
            => PathHandle                  -- ^ Handle to enumerate
            -> Enumerator T.Text (NameSpaceT m) b
+
+nsEnumText PathHandle {phAdvisory = AdviceWrite} _ = throwError Ebadspec
 
 nsEnumText ph s =
   Iteratee io where
@@ -164,13 +176,17 @@ tryStep get io = do
 
 -- | Enumerate a unioned directory. This enumerator expects an iteratee capable
 -- of receiving a stream of 'Stat' structures.
+-- The directory path handle must have its advisory mode 'AdviceAny' or 'AdviceRead'
 
 nsEnumDir :: (MonadIO m, C.MonadCatchIO m)
           => PathHandle                   -- ^ Handle of a directory to enumerate
           -> Enumerator Stat (NameSpaceT m) b
 
-nsEnumDir (PathHandle (DevAttach {devqid = q}) _) s | qid_typ q .&. c_QTDIR == 0 =
+nsEnumDir (PathHandle (DevAttach {devqid = q}) _ _) s | qid_typ q .&. c_QTDIR == 0 =
   throwError Enotdir
+
+nsEnumDir (PathHandle _ AdviceWrite _) s =
+  throwError Ebadspec
 
 nsEnumDir ph s = Iteratee $ do
   (u, bds) <- NameSpaceT $ do

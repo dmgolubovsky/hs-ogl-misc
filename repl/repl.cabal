@@ -1,0 +1,15 @@
+name:           repl
+version:        0.1
+license:        BSD3
+maintainer:     golubovsky@gmail.com
+synopsis:       Example REPL with Hint
+category:       graphics, user interface
+description:
+    Experiments with Hint
+build-type:     Simple
+build-depends:  base > 4, hint >= 0.3.3, cmdargs >= 0.6
+
+executable:     repl
+main-is:        repl.hs
+ghc-options:    -threaded
+

@@ -102,7 +102,7 @@ nsInit aptb dts nsi = do
   apps <- liftIO $ devApps aptb
   thr <- liftIO myThreadId
   attcons <- liftIO (devAttach cons Init "/" >>= flip devWalk "cons")
-  let consph = PathHandle {phAttach = attcons, phCanon = "#c/cons"}
+  let consph = PathHandle {phAttach = attcons, phCanon = "#c/cons", phAdvisory = AdviceAny}
   let bids = [cons, apps]
       dts' = dts ++ bids
   let dvm = M.fromList $ zip (map devchar dts') dts'
@@ -282,7 +282,7 @@ nsBind fl new old | old == "/" && isDevice new = NameSpaceT $ do
     True -> do
       let newnorm = normalise new
       attnew <- attdev newnorm `runReaderT` (dtb, ns, pv)
-      let phnew = PathHandle {phAttach = attnew, phCanon = newnorm}
+      let phnew = PathHandle {phAttach = attnew, phCanon = newnorm, phAdvisory = AdviceAny}
           ud = unionDir phnew
       return $ M.insert old (UnionPoint ud new) ns
     False -> bind_common fl new old dtb pv ns
@@ -336,6 +336,7 @@ nsCreate dph fp mode = NameSpaceT $ do
   let newpath = tail $ normalise ("x" ++ phCanon dph ++ "/" ++ fp)
   return PathHandle {
                 phCanon = newpath
+               ,phAdvisory = AdviceAny
                ,phAttach = da}
   
 
@@ -379,6 +380,7 @@ nsWstat ph st = NameSpaceT $ liftIO $ do
   let ncn = replaceFileName (phCanon ph) (st_name nst)
   return PathHandle {
                 phCanon = ncn
+               ,phAdvisory = phAdvisory ph
                ,phAttach = nda}
 
 -- | Create a 'PathHandle' for the standard input (as set in the Namespace environment)

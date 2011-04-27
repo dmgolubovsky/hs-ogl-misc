@@ -22,6 +22,7 @@ module System.IO9.NameSpace.Types (
   ,DevMap (..)
   ,NsEnv (..)
   ,PathHandle (..)
+  ,AdvisoryMode (..)
   ,Argument (..)
   ,AppDescr (..)
   ,AppMode (..)
@@ -101,6 +102,16 @@ data NsEnv m = NsEnv {
   ,runapp :: FilePath -> [Argument] -> NameSpaceT m NineError
 }
 
+-- | Advisory mode. It may be set for an application argument parsing.
+-- The advice should be taken by a Nesteratee which may refuse to open
+-- a read stream on an advised-for-write 'PathHandle'.
+
+data AdvisoryMode = 
+   AdviceAny                            -- ^ Any use of the handle is possible
+ | AdviceRead                           -- ^ Suggested for reading from a stream
+ | AdviceWrite                          -- ^ Suggested for writing to a stream
+   deriving (Eq, Show)
+
 -- | A semi-opaque data type to represent an evaluated path. Note that path handles
 -- identify filesystem objects by their name (paths), so if a file or directory
 -- gets renamed behind the scenes, 'PathHandle's associated with them may become
@@ -109,6 +120,7 @@ data NsEnv m = NsEnv {
 
 data PathHandle = PathHandle {
   phAttach :: DevAttach                 -- ^ Attachment desctiptor for the path if evaluated
+ ,phAdvisory :: AdvisoryMode            -- ^ Advisory mode, possibly from arguments parsing
  ,phCanon :: FilePath                   -- ^ Canonicalized (with dot-elements removed) path
 } deriving (Show)
 

@@ -87,10 +87,11 @@ eval_root p _ = liftIO $ throwIO $ Located (joinPath p) Efilename
 
 eval_step :: DevAttach -> [FilePath] -> [FilePath] -> [FilePath] -> EvalM PathHandle
 
--- Entire raw path consumed: evaluation complete.
+-- Entire raw path consumed: evaluation complete. Advisory mode is not involved here.
 
 eval_step da [] orig eval = return PathHandle {
   phAttach = da
+ ,phAdvisory = AdviceAny
  ,phCanon = joinPath orig}
 
 -- Dot on the path: skip it.
