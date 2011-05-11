@@ -20,13 +20,13 @@ build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.
                 transformers >= 0.2, stm >= 2.1, either-unwrap == 1.1, tuple >= 0.2,
                 enumerator >= 0.4.2, text >= 0.10.0.0.1, MonadCatchIO-transformers >= 0.2.2,
                 utf8-string >= 0.3.6, split >= 0.1.2, AbortT-transformers >= 1.0,
-                yaml-enumtok >= 0.1, parsec < 3.0, cmdargs >= 0.6.4
+                yaml-enumtok >= 0.1, parsec < 3.0, cmdargs >= 0.6.4, attoparsec-text >= 0.8.5
 
 extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
 
 exposed-modules:
     Data.NineP.Bits, Data.NineP.Posix, 
-    Data.Nesteratee,
+    Data.Nesteratee, Data.NestAtto,
     GHC.IO.CSPHandle, 
     System.IO9.Error, System.IO9.DirStream, System.IO9.MemoryStream,
     System.IO9.DevLayer, System.IO9.NameSpaceT, System.IO9.Application,
