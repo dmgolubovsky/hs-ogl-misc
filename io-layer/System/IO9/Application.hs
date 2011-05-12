@@ -40,7 +40,8 @@ import Data.Data
 import Data.List
 import Data.Maybe
 import Data.Typeable
-import Data.Enumerator hiding (map, length)
+import Data.Enumerator (run, ($$))
+import Data.Enumerator.List (consume)
 import Data.Nesteratee
 import System.Console.CmdArgs
 import System.Console.CmdArgs.Explicit

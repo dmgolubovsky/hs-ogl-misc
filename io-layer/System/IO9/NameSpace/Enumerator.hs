@@ -39,6 +39,7 @@ import Control.Concurrent
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import System.IO9.NameSpace.U8
 import System.IO9.NameSpace.Monad
 import System.IO9.NameSpace.Util
 import System.IO9.NameSpace.Types
@@ -46,14 +47,18 @@ import System.IO9.DevLayer
 import Data.Enumerator hiding (map)
 import Data.Nesteratee
 import Data.List.Split
+import Data.Text.Internal
 import qualified Control.Exception as X
 import qualified Control.Monad.CatchIO as C
 import qualified Data.ByteString as B
-import qualified Data.Enumerator.IO as EB
+import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Unsafe as B
+import qualified Data.Enumerator.Binary as EB
 import qualified Data.Enumerator.Text as ET
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as E
+import qualified Data.Text.Array as A
 
 -- | Open an 'Iteratee' on a binary file for the given path handle, use it, and close the handle
 -- afterwards.
@@ -222,7 +227,7 @@ dbgChunks = liftIter . printChunks
 
 nestText :: (Monad m) => Nesteratee T.Text B.ByteString m b
 
-nestText = nestState $ \i -> let (t, b) = E.decodeUtf8Part i
+nestText = nestState $ \i -> let (t, b) = decodeUtf8Part i
                              in  if B.length b > 5 then (T.singleton (chr 0xFFFD), B.tail b)
                                                    else (t, b)
 
@@ -233,8 +238,8 @@ nestLines :: (Monad m) => Nesteratee T.Text T.Text m b
 
 nestLines = nestEOF [T.singleton '\n'] . nestState splitNL
 
-splitNL t = let (p, r) = T.spanBy (/= '\n') t
-                (p', r') = T.spanBy (== '\n') r
+splitNL t = let (p, r) = spanBy (/= '\n') t
+                (p', r') = spanBy (== '\n') r
             in  case T.null r of
                   True ->  (T.empty, p)
                   False -> (p `T.append` p', r')
@@ -245,4 +250,5 @@ splitNL t = let (p, r) = T.spanBy (/= '\n') t
 nestBin :: (Monad m) => Nesteratee B.ByteString T.Text m b
 
 nestBin = nestState $ \i -> (E.encodeUtf8 i, T.empty)
+
 

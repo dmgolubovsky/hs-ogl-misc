@@ -37,7 +37,8 @@ import Data.NineP.Posix
 import Data.Nesteratee
 import Data.Time.Format
 import Data.Time.Clock.POSIX
-import Data.Enumerator (run, consume, (==<<), enumList)
+import Data.Enumerator (run, (==<<), enumList)
+import Data.Enumerator.List (consume)
 
 app :: (MonadIO m, MonadCatchIO m) => AppTable m
 

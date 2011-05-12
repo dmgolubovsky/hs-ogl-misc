@@ -18,11 +18,11 @@ build-type:     Simple
 build-depends:  base >= 4.2.0.1, bytestring >= 0.9, dlist >= 0.5, filepath >= 1.1,
                 containers >= 0.3, directory >= 1.0.1, NineP >= 0.0.2, unix >= 2.4,
                 transformers >= 0.2, stm >= 2.1, either-unwrap == 1.1, tuple >= 0.2,
-                enumerator >= 0.4.2, text >= 0.10.0.0.1, MonadCatchIO-transformers >= 0.2.2,
+                enumerator >= 0.4.10, text >= 0.11, MonadCatchIO-transformers >= 0.2.2,
                 utf8-string >= 0.3.6, split >= 0.1.2, AbortT-transformers >= 1.0,
                 yaml-enumtok >= 0.1, parsec < 3.0, cmdargs >= 0.6.4, attoparsec-text >= 0.8.5
 
-extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables
+extensions:     DeriveDataTypeable, TypeSynonymInstances, ScopedTypeVariables, BangPatterns
 
 exposed-modules:
     Data.NineP.Bits, Data.NineP.Posix, 
@@ -35,7 +35,7 @@ exposed-modules:
 other-modules:
     Control.Concurrent.Forkable,
     System.IO9.NameSpace.Monad, System.IO9.NameSpace.Types, System.IO9.NameSpace.Util,
-    System.IO9.NameSpace.Enumerator,
+    System.IO9.NameSpace.Enumerator, System.IO9.NameSpace.U8,
     System.IO9.DevCons,
     System.IO9.DevApps
 

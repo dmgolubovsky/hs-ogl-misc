@@ -35,7 +35,7 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Abort
 import Control.Monad.Trans.State.Strict
 import Data.Enumerator
-import qualified Data.Enumerator as DE (head)
+import qualified Data.Enumerator.List as DL (fold, head)
 
 -- | A general type of an 'Iteratee' nesting another 'Iteratee', or 'Nesteratee'.
 -- This is basically a special case of 'Enumeratee', but composable in a different way.
@@ -79,7 +79,7 @@ nestState f iter = loop False mempty iter where
       Continue k | eof -> error "nestState: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
-    mbchk <- DE.head
+    mbchk <- DL.head
     case mbchk of
       Nothing | s == mempty -> loop True s (k EOF)
       Nothing -> do
@@ -110,7 +110,7 @@ nestStateL f iter = loop False mempty iter where
       Continue k | eof -> error "nestStateL: divergent iteratee"
       Continue k -> loop2 s k
   loop2 s k = do
-    mbchk <- DE.head
+    mbchk <- DL.head
     case mbchk of
       Nothing | s == mempty -> loop True s (k EOF)
       Nothing -> do
@@ -138,7 +138,7 @@ nestEOF t iter = loop False False iter where
       Yield b r -> yield b r
       Continue k | eof -> error "nestEOF: divergent iteratee"
       Continue k -> do
-        mbchk <- DE.head
+        mbchk <- DL.head
         case mbchk of
           Just chk -> loop False False (k $ Chunks [chk])
           Nothing | e -> loop True True (k EOF)
@@ -157,7 +157,7 @@ nestYield r iter = loop False iter where
       Yield _ x -> yield r x
       Continue k | eof -> error "nestYield: divergent iteratee"
       Continue k -> do
-        mbchk <- DE.head
+        mbchk <- DL.head
         case mbchk of
           Just chk -> loop False (k $ Chunks [chk])
           Nothing -> loop True (k EOF)
@@ -167,7 +167,7 @@ nestYield r iter = loop False iter where
 
 iterFinal :: (Monad m) => Iteratee a m (Maybe a)
 
-iterFinal = liftFoldL' (\b a -> Just a) Nothing
+iterFinal = DL.fold (\b a -> Just a) Nothing
 
 -- | A type alias for a nested application body function.
 
@@ -197,11 +197,11 @@ nestFilter body iter = do
           Continue k -> loop True (k EOF)
 
 -- | Receive a chunk of 'Stream' from the application's upstream. This function calls
--- 'DE.head'
+-- 'DL.head'
 
 upStream :: (Monad m) => Nested i o m b (Maybe o)
 
-upStream = liftMI $ DE.head
+upStream = liftMI $ DL.head
 
 -- | Send a chunk (only one at a time) to the inner 'Iteratee'. If the inner 'Iteratee'
 -- is not ready, abort the application body with the given value (of the same type as 
