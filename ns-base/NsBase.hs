@@ -19,8 +19,9 @@ import System.IO9.NameSpaceT
 import Echo
 import Cat
 import Ls
+import Sh
 
 apps :: AppTable IO
 
-apps = appTable [Echo.app, Cat.app, Ls.app]
+apps = appTable [Echo.app, Cat.app, Ls.app, Sh.app]
 
