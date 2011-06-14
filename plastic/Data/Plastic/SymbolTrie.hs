@@ -15,14 +15,15 @@
 
 
 module Data.Plastic.SymbolTrie (
-  Symbol (..)
+  Symbol
  ,mkSymTrie
  ,mkSymbol
+ ,symParts
 ) where
 
 import Control.Monad
 import qualified Data.Trie as T
-import Data.ByteString.UTF8
+import Data.ByteString.UTF8 (fromString)
 
 -- | In Plastic, all global objects are addressed via IntMaps where Int
 -- values serve as keys for faster lookups. It is however necessary to
@@ -30,7 +31,13 @@ import Data.ByteString.UTF8
 -- This module provides facilities to perform such lookup using a Trie
 -- as a map from (byte)strings to symbols.
 
-newtype Symbol = Symbol Int
+data Symbol = Symbol String Int
+
+instance Show Symbol where
+  show (Symbol s i) = '#' : s
+
+instance Eq Symbol where
+  Symbol _ i1 == Symbol _ i2 = i1 == i2
 
 -- | Build an empty Trie for symbols lookup by character name.
 
@@ -59,11 +66,29 @@ mkSymbol genf updf trs str = do
   case T.lookup bs trs of
     Just sym -> return sym
     Nothing -> do
-      nsym <- genf str >>= return . Symbol
+      nsym <- genf str >>= return . (Symbol str)
       let trs' = T.insert bs nsym trs
       updf trs'
       return nsym
 
+
+-- | Split symbol name into parts as delimited by colons, and find how many arguments
+-- a message with this symbol takes.
       
+symParts :: Symbol -> ([String], Int)
+
+symParts (Symbol s _) = 
+  let eqcol = (== ':')
+      ps = parts eqcol s
+      cs = map (:[]) (filter eqcol s)
+      ls = case cs of
+             [] -> 0
+             _ -> length ps
+  in  (zipWith (++) ps cs, ls)
+
   
-  
+parts pred s = case dropWhile pred s of
+                                     [] -> []
+                                     s' -> w : parts pred s''
+                                         where (w, s'') = break pred s'
+ 
