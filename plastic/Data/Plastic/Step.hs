@@ -52,9 +52,7 @@ data Value =
  | ValRef Symbol                               -- ^ global reference via the system dictionary
  | ValLoc Local                                -- ^ local variable retrieval
  | ValInt Integer                              -- ^ a big integer value
- | ValSmall Int                                -- ^ a small integer
  | ValDouble Double                            -- ^ a double precision value
- | ValFloat Float                              -- ^ a float value
  | ValList [Value]                             -- ^ a list of Values
  | ValString String                            -- ^ a string value (not a list of characters)
  | Self                                        -- ^ use reference to the current object context
@@ -96,6 +94,7 @@ dissv s vs =
   in  concat $ intersperse " " $ zipWith (++) ps (take ls $ map dis vs)
 
 disch ss s@(Send It _ _ k) = disch (ss ++ [s]) k
+disch ss s | (not $ chained s) = prtchain ss ++ ".\n" ++ dis s
 disch ss (Store It loc k) = dis loc ++ " := (" ++ prtchain ss ++ ").\n" ++ dis k
 disch ss (Return It) = "^ (" ++ prtchain ss ++ ").\n"
 
@@ -112,9 +111,10 @@ chained _ = False
 instance Disasm Value where
   dis (ValLoc t) = show t
   dis (ValInt i) = show i
-  dis (ValFloat f) = show f
-  dis (ValSmall i) = show i
   dis (ValDouble d) = show d
+  dis (ValString s) = "'" ++ s ++ "'"
+  dis (Nil) = "nil"
+  dis (Self) = "self"
   dis x = show x
 
 instance Disasm Step where

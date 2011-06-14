@@ -15,8 +15,8 @@ main = do
              Send It minus [ValInt 3] .
              Store It t .
              Send (ValLoc t) plus [ValInt 4] .
-             Send It tern [ValInt 5, ValFloat 4.2]
-  putStrLn $ dis (code (Return It))
+             Send It tern [ValInt 5, ValDouble 4.2]
+  putStrLn $ dis (code (Return (ValLoc t)))
 
 
 
