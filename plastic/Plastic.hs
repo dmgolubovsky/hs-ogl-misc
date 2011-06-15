@@ -2,14 +2,15 @@ module Main where
 
 import Data.Plastic.SymbolTrie
 import Data.Plastic.Step
+import Data.Plastic.State
 
 main :: IO ()
 
 main = do
   putStrLn "Plastic"
-  plus <- mkSymbol (\_ -> return 1) (\_ -> return ()) mkSymTrie "+:"
-  minus <- mkSymbol (\_ -> return 1) (\_ -> return ()) mkSymTrie "-:"
-  tern <- mkSymbol  (\_ -> return 1) (\_ -> return ()) mkSymTrie "takes:two:"
+  plus <- mkSymbol (\_ -> return 1) (\_ -> return ()) (return mkSymTrie) "+:"
+  minus <- mkSymbol (\_ -> return 1) (\_ -> return ()) (return mkSymTrie) "-:"
+  tern <- mkSymbol  (\_ -> return 1) (\_ -> return ()) (return mkSymTrie) "takes:two:"
   let t = Local 1
   let code = Send (ValInt 1) plus [ValInt 2] .
              Send It minus [ValInt 3] .

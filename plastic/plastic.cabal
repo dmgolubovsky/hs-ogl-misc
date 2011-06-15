@@ -11,7 +11,7 @@ build-depends:   base >= 4.2.0.1, bytestring >= 0.9.1, utf8-string >= 0.3.6,
                  bytestring-trie >= 0.2.3, transformers >= 0.2.2, containers >= 0.4.0
 
 exposed-modules:
-    Data.Plastic.SymbolTrie, Data.Plastic.Step
+    Data.Plastic.SymbolTrie, Data.Plastic.Step, Data.Plastic.State, Data.Plastic.GraphPrim
 
 executable:      plastic
 main-is:         Plastic.hs

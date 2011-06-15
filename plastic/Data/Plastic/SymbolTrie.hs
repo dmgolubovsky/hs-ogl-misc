@@ -16,6 +16,7 @@
 
 module Data.Plastic.SymbolTrie (
   Symbol
+ ,SymbolTrie
  ,mkSymTrie
  ,mkSymbol
  ,symParts
@@ -39,30 +40,35 @@ instance Show Symbol where
 instance Eq Symbol where
   Symbol _ i1 == Symbol _ i2 = i1 == i2
 
+-- | A Trie holding Symbols.
+
+type SymbolTrie = T.Trie Symbol
+
 -- | Build an empty Trie for symbols lookup by character name.
 
-mkSymTrie :: T.Trie Symbol
+mkSymTrie :: SymbolTrie
 
 mkSymTrie = T.empty
 
 -- | Given a character name, find or create a symbol for it. This function is expected
 -- to operate in a Monadic environment providing some sort of state, with the Symbol Trie
--- being part of that state. Two functions: one to generate an unique Int value (to use
--- as Symbol's numeric key), another to update the Monadic state with new Trie should be
--- provided.
+-- being part of that state. Three functions: one to generate an unique Int value (to use
+-- as Symbol's numeric key), another to update the Monadic state with new Trie, third
+-- to obtain the symbol map should be provided
 
 mkSymbol :: (Monad m)
          => (String -> m Int)                   -- ^ function to generate an unique Int value:
                                                 --   may compute a hash, or call a random numbers
                                                 --   generator, or return an incrementing value
-         -> (T.Trie Symbol -> m ())             -- ^ function to update the Monadic state with
+         -> (SymbolTrie -> m ())                -- ^ function to update the Monadic state with
                                                 --   modified Trie if needed
-         -> T.Trie Symbol                       -- ^ the Trie to operate on
+         -> (m SymbolTrie)                      -- ^ the Trie to operate on
          -> String                              -- ^ character name of the symbol
          -> m Symbol                            -- ^ symbol for the string
 
-mkSymbol genf updf trs str = do 
+mkSymbol genf updf mtrs str = do 
   let bs = fromString str
+  trs <- mtrs
   case T.lookup bs trs of
     Just sym -> return sym
     Nothing -> do
